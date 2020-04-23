@@ -1,0 +1,9 @@
+[submodule "jetson-inference"]
+	path = jetson-inference
+	url = https://github.com/dusty-nv/jetson-inference
+[submodule "src/ros_deep_learning"]
+	path = src/ros_deep_learning
+	url = https://github.com/dusty-nv/ros_deep_learning
+[submodule "src/jetbot_ros"]
+	path = src/jetbot_ros
+	url = https://github.com/dusty-nv/jetbot_ros

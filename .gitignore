@@ -127,3 +127,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# ROS stuff
+.catkin_workspace
+devel/
