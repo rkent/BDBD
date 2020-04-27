@@ -1,0 +1,13 @@
+
+[Unit]
+Description=BeeDee stats display service
+
+[Service]
+Type=simple
+User=kent
+ExecStart=/bin/sh -c "python3 /home/kent/github/rkent/bdbd/sys/stats.py"
+WorkingDirectory=/home/kent
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

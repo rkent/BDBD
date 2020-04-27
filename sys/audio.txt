@@ -1,0 +1,27 @@
+2020-03-10
+
+I had considerable trouble getting audio to work properly with systemd. This is an overview, as I remember it,
+of what I needed to do.
+
+The underlying issue is that espeak-ng uses pulseaudio. But pulseaudio tends to grab hold of audio devices and make them
+unavailable to others.
+
+The solution was to run a pulseaudio server at startup, with --system. This can now be shared.
+
+But additional tweaks:
+
+1)  All users touching this must be added to the pulse-access group, including root, pulse, and any users
+    (like beedee or kent)
+2)  The systemd services beedee.service and pulseaudio.service are included in the repo. These must be copied to
+    /etc/systemd/system. Then sudo systemctl enable beedee, sudo systemctl enable pulseaudio.
+3)  Even with beedee starting after pulseaudio, there is not enough time for pulseaudio to grab
+    the ReSpeaker usb device. To solve this, I added a delay in main.py before the modules get loaded
+    that make use of audio.
+4)  Also, pulseaudio must be configured so that the default device is the ReSpeaker. This was done by adding
+    these lines to the end of /etc/pulse/default.pa:
+
+    set-default-sink alsa_output.usb-SEEED_ReSpeaker_4_Mic_Array__UAC1.0_-00.analog-stereo
+    set-default-source alsa_output.usb-SEEED_ReSpeaker_4_Mic_Array__UAC1.0_-00.analog-stereo.monitor
+
+5)  copy sys/60-respeaker.rules to /etc/udev/rules.d
+  
