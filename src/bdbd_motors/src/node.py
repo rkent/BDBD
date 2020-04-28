@@ -57,8 +57,13 @@ def on_cmd_raw(msg):
     left = min(max(-MAX_SPEED, left), MAX_SPEED)
     right = min(max(-MAX_SPEED, right), MAX_SPEED)
     rospy.loginfo('setting speed to {:5.3f}, {:5.3f}'.format(left, right))
-    set_speed(motor_left_ID,  left)
-    set_speed(motor_right_ID, right)
+    # TODO: somehow I got the polarity reversed on the motors
+    if abs(left) < .05:
+        left = 0.0
+    if abs(right) < .05:
+        right = 0.0
+    set_speed(motor_left_ID,  -left)
+    set_speed(motor_right_ID, -right)
 
 # simple string commands (left/right/forward/backward/stop)
 def on_cmd_str(msg):
