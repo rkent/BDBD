@@ -18,9 +18,9 @@ class Do_Motors():
         self.RZ = 128 # raw signal from joystick (vertical)
         self.active = False
         self.event_queue = Queue()
-        rospy.init_node('bdbd_domotors')
-        self.sub = rospy.Subscriber('bdbd_gamepad/events', GamepadEvent, self.on_gamepad_event)
-        self.pub = rospy.Publisher('bdbd_motors/cmd_raw', MotorsRaw, queue_size=10)
+        rospy.init_node('domotors')
+        self.sub = rospy.Subscriber('gamepad/events', GamepadEvent, self.on_gamepad_event)
+        self.pub = rospy.Publisher('motors/cmd_raw', MotorsRaw, queue_size=10)
 
     def on_gamepad_event(self, msg):
         self.event_queue.put(msg)

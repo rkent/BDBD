@@ -103,7 +103,7 @@ if __name__ == '__main__':
     all_stop()
 
     # setup ros node
-    rospy.init_node('bdbd_motors')
+    rospy.init_node('motors')
     
     rospy.Subscriber('~cmd_dir', String, on_cmd_dir)
     rospy.Subscriber('~cmd_raw', MotorsRaw, on_cmd_raw)
