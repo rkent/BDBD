@@ -72,9 +72,12 @@ class Do_Motors():
 
         self.pub.publish(self.left, self.right)
 
-if __name__ == '__main__':
+def main():
     runner = Do_Motors()
     try:
         runner.run()
     except rospy.ROSInterruptException:
         pass
+
+if __name__ == '__main__':
+    main()
