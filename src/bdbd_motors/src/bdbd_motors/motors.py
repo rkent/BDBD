@@ -12,6 +12,15 @@ from bdbd_motors.msg import MotorsRaw
 BASE_SPEED = 0.4
 MAX_SPEED = 1.0
 
+# setup motor controller
+motor_driver = Adafruit_MotorHAT(i2c_bus=1)
+
+motor_left_ID = 1
+motor_right_ID = 2
+
+motor_left = motor_driver.getMotor(motor_left_ID)
+motor_right = motor_driver.getMotor(motor_right_ID)
+
 # sets motor speed between [-1.0, 1.0]
 def set_speed(motor_ID, value):
     max_pwm = 115.0
@@ -86,19 +95,7 @@ def on_cmd_str(msg):
     else:
         rospy.logerror(rospy.get_caller_id() + ' invalid cmd_str=%s', msg.data)
 
-
-# initialization
-if __name__ == '__main__':
-
-    # setup motor controller
-    motor_driver = Adafruit_MotorHAT(i2c_bus=1)
-
-    motor_left_ID = 1
-    motor_right_ID = 2
-
-    motor_left = motor_driver.getMotor(motor_left_ID)
-    motor_right = motor_driver.getMotor(motor_right_ID)
-
+def main():
     # stop the motors as precaution
     all_stop()
 
@@ -110,8 +107,13 @@ if __name__ == '__main__':
     rospy.Subscriber('~cmd_str', String, on_cmd_str)
 
     # start running
-    rospy.spin()
+    try:
+        rospy.spin()
+    except rospy.ROSInterruptException:
+        pass
+    finally:
+        # stop motors before exiting
+        all_stop()
 
-    # stop motors before exiting
-    all_stop()
-
+if __name__ == '__main__':
+    main()
