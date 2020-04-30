@@ -1,5 +1,5 @@
 <launch>
-    <node name='gamepad' pkg='bdbd_gamepad' type='gamepad.py' ns='bdbd'/>
+    <node name='gamepad' pkg='bdbd_gamepad' type='bdbd_gamepad' ns='bdbd'/>
     <node name='motors' pkg='bdbd_motors' type='motors.py' ns='bdbd' />
     <node name='domotors' pkg='bdbd_domotors' type='domotors.py' ns='bdbd' />
     <node name='sayit' pkg='bdbd_sayit' type='bdbd_sayit' ns='bdbd' />

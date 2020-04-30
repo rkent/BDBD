@@ -17,9 +17,11 @@ def publishEvents():
             rate.sleep()
     print('rospy shutdown')
 
-if __name__ == '__main__':
+def main():
     try:
         publishEvents()
     except rospy.ROSInterruptException:
         pass
-    
+
+if __name__ == '__main__':
+    main()
