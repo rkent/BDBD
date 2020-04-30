@@ -33,7 +33,10 @@ class SayIt():
 
             rospy.sleep(PERIOD)
 
-if __name__ == '__main__':
+def main():
     sayit = SayIt()
     sayit._queue.put('This is BDBD robot')
     sayit.run()
+
+if __name__ == '__main__':
+    main()
