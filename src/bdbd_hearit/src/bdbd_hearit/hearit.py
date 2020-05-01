@@ -13,6 +13,7 @@ import json
 import pyaudio
 import threading
 from bdbd_hearit.msg import AngledText
+from audio_common_msgs.msg import AudioData
 
 RATE = 1.0
 
@@ -41,6 +42,8 @@ def main():
                     audio, angle = r.listen(source)
                     #print(audio.get_wav_data()[0:40])
                     rospy.loginfo('Sound heard at angle: ' + str(angle))
+                    if audiopub.get_num_connections() > 0:
+                        audiopub.publish(audio.get_wav_data())
                     text = recognizer(audio, credentials_json=google_key)
                     rospy.loginfo('we heard statement: ' + text)
                     voiceQueue.put([text, angle])
@@ -53,7 +56,8 @@ def main():
                 break
 
     rospy.init_node('hearit')
-    pub = rospy.Publisher('hearit/angled_text', AngledText, queue_size=10)
+    textpub = rospy.Publisher('hearit/angled_text', AngledText, queue_size=10)
+    audiopub = rospy.Publisher('audio', AudioData, queue_size=10)
 
     pa = pyaudio.PyAudio()
     device = indexFromName(pa, 'respeaker')
@@ -75,7 +79,7 @@ def main():
         try:
             if not voiceQueue.empty():
                 statement, angle = voiceQueue.get()
-                pub.publish(statement, angle)
+                textpub.publish(statement, angle)
             rospy.sleep(RATE)
         except:
             rospy.logerror(traceback.format_exc())
