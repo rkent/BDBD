@@ -5,5 +5,6 @@
     <node name='domotors' pkg='bdbd' type='domotors' ns='bdbd' />
     <node name='sayit' pkg='bdbd' type='sayit' ns='bdbd' />
     <node name='hearit' pkg='bdbd' type='hearit' ns='bdbd' />
+    <node name='pantilt' pkg='bdbd' type='pantilt' ns='bdbd' />
     <node name='jetbot_camera_1' pkg='jetbot_ros' type='jetbot_camera' />
 </launch>

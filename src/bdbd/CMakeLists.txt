@@ -53,6 +53,7 @@ add_message_files(
   GamepadEvent.msg
   MotorsRaw.msg
   AngledText.msg
+  PanTilt.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -73,6 +74,7 @@ add_message_files(
 generate_messages(
   DEPENDENCIES
   std_msgs
+  audio_common_msgs
 )
 
 ################################################
@@ -167,6 +169,7 @@ catkin_install_python(PROGRAMS
   nodes/domotors
   nodes/motors
   nodes/hearit
+  nodes/pantilt
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
