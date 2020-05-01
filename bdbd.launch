@@ -3,4 +3,5 @@
     <node name='motors' pkg='bdbd_motors' type='bdbd_motors' ns='bdbd' />
     <node name='domotors' pkg='bdbd_domotors' type='bdbd_domotors' ns='bdbd' />
     <node name='sayit' pkg='bdbd_sayit' type='bdbd_sayit' ns='bdbd' />
+    <node name='hearit' pkg='bdbd_hearit' type='bdbd_hearit' ns='bdbd' />
 </launch>
