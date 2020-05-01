@@ -4,7 +4,7 @@ import time
 
 from Adafruit_MotorHAT import Adafruit_MotorHAT
 from std_msgs.msg import String
-from bdbd_motors.msg import MotorsRaw
+from bdbd.msg import MotorsRaw
 
 # Adapted from https://github.com/dusty-nv/jetbot_ros/blob/master/scripts/jetbot_motors.py
 # Adapted by R. Kent James <kent@caspia.com> for bdbd robot

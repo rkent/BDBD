@@ -1,7 +1,7 @@
 <launch>
-    <node name='gamepad' pkg='bdbd_gamepad' type='bdbd_gamepad' ns='bdbd'/>
-    <node name='motors' pkg='bdbd_motors' type='bdbd_motors' ns='bdbd' />
-    <node name='domotors' pkg='bdbd_domotors' type='bdbd_domotors' ns='bdbd' />
-    <node name='sayit' pkg='bdbd_sayit' type='bdbd_sayit' ns='bdbd' />
-    <node name='hearit' pkg='bdbd_hearit' type='bdbd_hearit' ns='bdbd' />
+    <node name='gamepad' pkg='bdbd' type='gamepad' ns='bdbd'/>
+    <node name='motors' pkg='bdbd' type='motors' ns='bdbd' />
+    <node name='domotors' pkg='bdbd' type='domotors' ns='bdbd' />
+    <node name='sayit' pkg='bdbd' type='sayit' ns='bdbd' />
+    <node name='hearit' pkg='bdbd' type='hearit' ns='bdbd' />
 </launch>

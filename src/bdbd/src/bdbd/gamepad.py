@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import rospy
-from bdbd_gamepad.msg import GamepadEvent
+from bdbd.msg import GamepadEvent
 from libgamepad import GamePad
 
 def publishEvents():

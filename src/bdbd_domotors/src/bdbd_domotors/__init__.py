@@ -1,1 +1,0 @@
-from domotors import main

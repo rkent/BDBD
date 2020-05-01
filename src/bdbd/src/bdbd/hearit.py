@@ -12,7 +12,7 @@ from rerecognizer import ReRecognizer
 import json
 import pyaudio
 import threading
-from bdbd_hearit.msg import AngledText
+from bdbd.msg import AngledText
 from audio_common_msgs.msg import AudioData
 
 RATE = 1.0

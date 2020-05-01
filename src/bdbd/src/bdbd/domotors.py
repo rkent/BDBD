@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 import math
 import rospy
-from bdbd_gamepad.msg import GamepadEvent
-from bdbd_motors.msg import MotorsRaw
+from bdbd.msg import GamepadEvent
+from bdbd.msg import MotorsRaw
 try:
     from Queue import Queue
 except:
