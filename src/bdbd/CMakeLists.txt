@@ -54,6 +54,7 @@ add_message_files(
   MotorsRaw.msg
   AngledText.msg
   PanTilt.msg
+  NameProb.msg
 )
 
 ## Generate services in the 'srv' folder

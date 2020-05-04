@@ -18,6 +18,9 @@ def publishEvents():
     print('rospy shutdown')
 
 def main():
+    # dummy
+    import os
+    print(os.getcwd())
     try:
         publishEvents()
     except rospy.ROSInterruptException:

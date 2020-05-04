@@ -7,3 +7,9 @@
 [submodule "src/jetbot_ros"]
 	path = src/jetbot_ros
 	url = https://github.com/dusty-nv/jetbot_ros
+[submodule "src/bdbd/src/bdbd/bddata"]
+	path = src/bdbd/src/bdbd/bddata
+	url = git@github.com:rkent/bddata.git
+[submodule "tensorrt_demos"]
+	path = tensorrt_demos
+	url = https://github.com/jkjung-avt/tensorrt_demos.git
