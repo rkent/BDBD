@@ -8,6 +8,8 @@ import sys
 import time
 import logging
 import pickle
+import numpy as np
+import cv2
 from bdbd.libpy.MessageClient import MessageClient, packId, unpackId
 
 def do_gpu():
@@ -46,17 +48,17 @@ def do_gpu():
         while True:
             try:
                 topic, message = queue.get()
-                log.info('got topic {}'.format(topic))
                 if topic == 'beedee/command':
                     if message == '_quit':
                         break
 
                 if topic == 'bddata/get_faces':
-                    log.info('get_faces request')
-                    frame = pickle.loads(message, encoding='bytes')
+                    frame_jpg = np.asarray(bytearray(message), dtype='uint8')
+                    frame = cv2.imdecode(frame_jpg, cv2.IMREAD_COLOR)
+                    #frame = pickle.loads(message, encoding='bytes')
                     boxes, landmarks = mtcnn.detect(frame, minsize=40)
                     mc.publish('beedee/faces', boxes.tolist(), msgType='json')
-                    log.info('get_faces results {}'.format(boxes))
+                    log.debug('get_faces results {}'.format(boxes))
             except KeyboardInterrupt:
                 break
 
