@@ -1,7 +1,5 @@
 # uses of tensorflow, without GPU
 
-__name__ = 'do_tf'
-
 def classify_face(embedding, svm_model, svm_encoder):
     yhat_trains = svm_model.predict([embedding])
     yhat_probs = svm_model.predict_proba([embedding])
@@ -12,21 +10,12 @@ def classify_face(embedding, svm_model, svm_encoder):
     return (yhat_names[0], prob)
 
 def do_tf():
-    from queue import Queue
-    queue = Queue()
-    from functools import partial
-    import signal
-    def quit(q, sig, frame):
-        print(f'handling signal {sig} in {__name__}', flush=True)
-        q.put(['beedee/command', '_quit'])
-    sigs = [signal.SIGHUP, signal.SIGTERM]
-    for s in sigs:
-        signal.signal(s, partial(quit, queue))
-
     try:
         import logging
         import logging.handlers
         import traceback
+        from queue import Queue
+        queue = Queue()
 
         #import configuration
         #config = configuration.get()
@@ -34,16 +23,16 @@ def do_tf():
         log_format = '%(name)-20s%(process)-8s%(levelname)-9s%(asctime)s: %(message)s'
 
         logging.basicConfig(level=log_level, format=log_format)
-        log = logging.getLogger(__name__)
+        log = logging.getLogger('do_tf')
 
         from bdbd.libpy.MessageClient import MessageClient
         mc = MessageClient('localhost', 'beedee-do_tf', queue)
         mc.connect()
         mc.subscribe('beedee/command')
-        mc.subscribe('beedee/get_embedding', msgType='bytes')
+        mc.subscribe('beedee/get_facename', msgType='bytes')
 
         import os
-        log.info(f'{__name__} starting with PID {str(os.getpid())}')
+        log.info(f'do_tf starting with PID {str(os.getpid())}')
 
         os.environ["CUDA_VISIBLE_DEVICES"]="-1"
         import cv2
@@ -62,16 +51,17 @@ def do_tf():
         from tensorflow.keras.models import load_model
         log.info('Loading embedding model')
         start = time.time()
-        model = load_model('models/facenet_keras.h5')
+        file_dir = os.path.dirname(os.path.abspath(__file__))
+        model = load_model(file_dir + '/models/facenet_keras.h5')
 
-        data_dir = 'bddata/'
-        (svm_model, svm_encoder) = pickle.load(open(data_dir + 'family_face_svm.p', 'rb'))
+        data_dir = '/bddata/'
+        (svm_model, svm_encoder) = pickle.load(open(file_dir + data_dir + 'family_face_svm.p', 'rb'))
 
         log.info(f'embedding model loaded, elapsed time {round(time.time() - start, 3)} seconds')
 
         # prime the pump by evaluating a single image
         # load the face dataset
-        data = np.load('bddata/faces.npz', allow_pickle=True)
+        data = np.load(file_dir + data_dir + 'faces.npz', allow_pickle=True)
         X = data['arr_0']
         start = time.time()
         log.info('Starting initial embedding calculation to prime the pump')
@@ -88,106 +78,33 @@ def do_tf():
             try:
                 topic, message = queue.get()
                 if topic == 'beedee/command':
-                    if message == '_quit':
+                    if message == '_quit' or message == 'do_tf_quit':
                         break
 
-                if topic == 'beedee/get_embedding':
-                    id, facePixels = pickle.loads(message)
-                    log.info(f'get_embedding request with id {id}')
-                    embedding = get_embedding(model, facePixels)
+                if topic == 'beedee/get_facename':
+                    frame_jpg = np.asarray(bytearray(message), dtype='uint8')
+                    frame = cv2.imdecode(frame_jpg, cv2.IMREAD_COLOR)
+                    log.info(f'get_facename request')
+                    embedding = get_embedding(model, frame)
                     name, prob = classify_face(embedding, svm_model, svm_encoder)
                     log.info('publishing face name: {} prob: {:6.3f}'.format(name, prob))
-                    mc.publish('beedee/facename', {name: name, probability: prob}, msgType='json')
+                    mc.publish('beedee/facename', {'name': name, 'probability': prob}, msgType='json')
 
             except KeyboardInterrupt:
-                pass
+                break
             except:
                 if errors.handle():
                     break
                 else:
-                    log.info(f'{__name__} ignoring error, continuing')
+                    log.info(f'do_tf ignoring error, continuing')
 
     except:
         exc = traceback.format_exc()
-        log.error(f'Exception caught in {__name__}:\n{exc}')
+        log.error(f'Exception caught in do_tf:\n{exc}')
     finally:
         mc.close()
         tf.keras.backend.clear_session()
-        log.info(f'{__name__} ending')
+        log.info(f'do_tf ending')
     return 0
 
 do_tf()
-
-# demo as standalone
-'''
-if __name__ == '__main__':
-
-    # given embedding, classify the face
-
-    import pickle
-
-    data_dir = 'bddata/'
-    (svm_model, svm_encoder) = pickle.load(open(data_dir + 'family_face_svm.p', 'rb'))
-
-    def classify_face(embedding):
-        yhat_trains = svm_model.predict([embedding])
-        yhat_probs = svm_model.predict_proba([embedding])
-        yhat_names = svm_encoder.inverse_transform(yhat_trains)
-        index = yhat_trains[0]
-        prob = round(yhat_probs[0][index] * 100., 1)
-    
-        return (yhat_names[0], prob)
-
-    import time
-    from multiprocessing import Process
-    from bdbd.libpy.MessageClient import MessageClient
-    import numpy as np
-    import pickle
-    from queue import Queue
-    queue = Queue()
-
-    import logging
-    logging.basicConfig(level='DEBUG')
-    log = logging.getLogger(__name__)
-
-    p = Process(target=do_tf, args=((None),))
-    p.start()
- 
-    queue=Queue()
-    mc = MessageClient('localhost', 'beedee-do_tf_demo', queue)
-    mc.connect()
-    mc.subscribe('beedee/command')
-    mc.subscribe('bddata/put_embedding', msgType='bytes')
-
-    data = np.load('bddata/faces.npz', allow_pickle=True)
-    X = data['arr_0']
-
-    # Wait for do_tr to signal ready
-    while True:
-        topic, message = queue.get()
-        if topic == 'beedee/command':
-            if message == 'GET_EMBEDDING.READY':
-                break
-
-    start = time.time()
-    id = 'dummy'
-    pickled_image = pickle.dumps((id, X[0]))
-    mc.publish('beedee/get_embedding', pickled_image, msgType='bytes')
-
-    while True:
-        try:
-            topic, message = queue.get()
-            if topic == 'bddata/put_embedding':
-                id, embedding = pickle.loads(message)
-                log.info(f'got embedding with id {id}')
-                log.info(f'type of embedding: {type(embedding)}')
-                log.info(f'elapsed time: {round(time.time() - start, 3)}')
-                name, prob = classify_face(embedding)
-                log.info(f'name {name} ({round(prob, 1)}%)')
-        except KeyboardInterrupt:
-            mc.publish('beedee/command', '_quit')
-            break
-    log.info('wait for process to accept _quit and end')
-    p.join()
-    mc.close()
-'''

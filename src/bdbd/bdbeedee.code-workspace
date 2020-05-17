@@ -7,5 +7,10 @@
 			"path": "../../../beedee"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"python.autoComplete.extraPaths": [
+			"/home/kent/github/rkent/bdbd/devel/lib/python2.7/dist-packages",
+			"/opt/ros/melodic/lib/python2.7/dist-packages"
+		]
+	}
 }

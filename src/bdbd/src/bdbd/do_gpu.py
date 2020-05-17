@@ -1,18 +1,18 @@
 #!/usr/bin/python3
 # use gpu to process image using https://github.com/jkjung-avt/tensorrt_demos
 
-import logging
-import traceback
-import os
-import sys
-import time
-import logging
-import pickle
-import numpy as np
-import cv2
-from bdbd.libpy.MessageClient import MessageClient, packId, unpackId
-
 def do_gpu():
+    import logging
+    import traceback
+    import os
+    import sys
+    import time
+    import logging
+    import pickle
+    import numpy as np
+    import cv2
+    from bdbd.libpy.MessageClient import MessageClient, packId, unpackId
+
     from queue import Queue
     queue = Queue()
 
@@ -21,14 +21,14 @@ def do_gpu():
         log_format = '%(name)-20s%(process)-8s%(levelname)-9s%(asctime)s: %(message)s'
 
         logging.basicConfig(level=log_level, format=log_format)
-        log = logging.getLogger(__name__)
+        log = logging.getLogger('do_gpu')
 
         mc = MessageClient('localhost', 'beedee-do_gpu', queue)
         mc.connect()
         mc.subscribe('beedee/command')
         mc.subscribe('bddata/get_faces', msgType='bytes')
 
-        log.info(f'{__name__} starting with PID {str(os.getpid())}')
+        log.info('do_gpu starting with PID {str(os.getpid())}')
 
         # locate and load tensorrt_demos face detection
         start = time.time()
@@ -49,7 +49,7 @@ def do_gpu():
             try:
                 topic, message = queue.get()
                 if topic == 'beedee/command':
-                    if message == '_quit':
+                    if message == '_quit' or message == 'do_gpu_quit':
                         break
 
                 if topic == 'bddata/get_faces':
@@ -71,5 +71,4 @@ def do_gpu():
         log.info(f'{__name__} ending')
     return 0
 
-if __name__ == '__main__':
-    do_gpu()
+do_gpu()

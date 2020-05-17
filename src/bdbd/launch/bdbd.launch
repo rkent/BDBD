@@ -12,4 +12,5 @@
     <node name='hearit' pkg='bdbd' type='hearit' ns='bdbd' />
     <node name='pantilt' pkg='bdbd' type='pantilt' ns='bdbd' />
     <node name='jetbot_camera_1' pkg='jetbot_ros' type='jetbot_camera' />
+    <include file='$(dirname)/sr305.launch' />
 </launch>

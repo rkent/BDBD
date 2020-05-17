@@ -13,3 +13,6 @@
 [submodule "tensorrt_demos"]
 	path = tensorrt_demos
 	url = https://github.com/jkjung-avt/tensorrt_demos.git
+[submodule "src/realsense-ros"]
+	path = src/realsense-ros
+	url = https://github.com/IntelRealSense/realsense-ros.git

@@ -1,0 +1,17 @@
+Default installs of librealsense from Intel sources are compiled with CUDA support, but for some reason
+this is not working with the SR305 camera. (https://github.com/IntelRealSense/librealsense/issues/6373)
+
+On the bdbd system, compile librealsense from source as follows
+(see https://github.com/jetsonhacks/installRealSenseSDK/blob/master/buildLibrealsense.sh)
+
+1)  clone https://github.com/IntelRealSense/librealsense.git
+2)  cd librealsense
+3)  mkdir build
+4)  cd build
+5)  disconnect all realsense cameras
+6)  install any required dependencies
+7)  cmake .. -DBUILD_EXAMPLES=true -DFORCE_LIBUVC=true -DBUILD_WITH_CUDA=false -DCMAKE_BUILD_TYPE=release -DBUILD_PYTHON_BINDINGS=bool:true
+8)  make -j4
+9)  sudo make install
+10) add to .bashrc:
+        export PYTHONPATH=$PYTHONPATH:/usr/local/lib
