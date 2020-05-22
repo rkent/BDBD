@@ -1,4 +1,6 @@
 /**
+  This node is mostly a demo to show getting a distance in C++ from the depth image, manipulating
+  that image, and converting into a ROS Image message.
 */
 #include "ros/ros.h"
 // #include "std_msgs/String.h"
@@ -13,12 +15,14 @@
 
 static const std::string OPENCV_WINDOW = "Image window";
 
+
 class ImageConverter
 {
   ros::NodeHandle nh_;
   image_transport::ImageTransport it_;
   image_transport::Subscriber image_sub_;
   image_transport::Publisher image_pub_;
+  double filteredMax = 500.;
 
 public:
   ImageConverter()
@@ -53,20 +57,37 @@ public:
 
     int col2 = cv_ptr->image.cols/2;
     int row2 = cv_ptr->image.rows/2;
-    auto center = cv_ptr->image.at<uchar>(col2, row2);
-    ROS_INFO("Center: %i", center);
+    auto center = cv_ptr->image.at<short>(row2, col2);
+    float fcenter = center * .00125;
+    ROS_INFO("Center pixel: %i, Center distance: %f (meters) ", center, fcenter);
     // Normalize for visualization
-    cv::Mat normed;
-    cv::normalize(cv_ptr->image, normed, 0, 255, cv::NORM_MINMAX, CV_8UC1);
-    auto ncenter = normed.at<uchar>(col2, row2);
-    ROS_INFO("NCenter: %i", ncenter);
+    /*
+    cv::Scalar mean = 0.;
+    cv::Scalar std = 0.;
+    cv::meanStdDev(cv_ptr->image, mean, std);
+    filteredMax = mean[0] + 3.*std[0];
+    */
+    double newMin = 0.0;
+    double newMax = 0.0;
+    cv::minMaxIdx(cv_ptr->image, &newMin, &newMax);
+    double frate = 0.02;
+    filteredMax = (1. - frate) * filteredMax + frate * newMax;
+    if (filteredMax <= 0.0) {
+      filteredMax = 1.;
+    }
+  
+    cv::Mat normed = (60000. / filteredMax) * cv_ptr->image;
+    // cv::normalize(cv_ptr->image, normed, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+    //auto ncenter = normed.at<uchar>(col2, row2);
+    //ROS_INFO("NCenter: %i", ncenter);
 
     // Update GUI Window
     cv::imshow(OPENCV_WINDOW, normed);
     cv::waitKey(3);
 
     // Output modified video stream
-    //image_pub_.publish(cv_ptr->toImageMsg());
+    sensor_msgs::ImagePtr outMsg = cv_bridge::CvImage(std_msgs::Header(), "mono8", normed).toImageMsg();
+    image_pub_.publish(outMsg);
   }
 };
 
@@ -76,7 +97,7 @@ int main(int argc, char **argv)
  * The ros::init() function needs to see argc and argv so that it can perform
  * any ROS arguments and name remapping that were provided at the command line.
 */
-    ros::init(argc, argv, "talker");
+    ros::init(argc, argv, "showDepthImage");
     ImageConverter ic;
     ros::spin();
     return(0);

@@ -21,7 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 find_package(OpenCV REQUIRED)
-
+find_package(realsense2 2.32.1)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -60,6 +60,7 @@ add_message_files(
   AngledText.msg
   PanTilt.msg
   NameProb.msg
+  RoadBlocking.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -128,6 +129,7 @@ catkin_package(
 include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
+  ${realsense2_INCLUDE_DIR}
 )
 
 ## Declare a C++ library
@@ -143,7 +145,10 @@ include_directories(
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
-add_executable(talker src/cpptutorial.cpp)
+add_executable(showDepthImage src/showDepthImage.cpp)
+add_executable(processDepthImage src/processDepthImage.cpp)
+add_executable(processPointCloud src/processPointCloud.cpp)
+add_executable(detectBlocking src/detectBlocking.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -157,8 +162,27 @@ add_executable(talker src/cpptutorial.cpp)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(
-  talker
+  showDepthImage
   ${OpenCV_LIBS}
+  ${catkin_LIBRARIES}
+)
+
+target_link_libraries(
+  processDepthImage
+  ${realsense2_LIBRARY}
+  ${OpenCV_LIBS}
+  ${catkin_LIBRARIES}
+)
+
+target_link_libraries(
+  processPointCloud
+  # ${realsense2_LIBRARY}
+  ${OpenCV_LIBS}
+  ${catkin_LIBRARIES}
+)
+
+target_link_libraries(
+  detectBlocking
   ${catkin_LIBRARIES}
 )
 

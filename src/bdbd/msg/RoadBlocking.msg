@@ -1,0 +1,6 @@
+float32 leftRoadDepth
+float32 centerRoadDepth
+float32 rightRoadDepth
+float32 leftObstacleDepth
+float32 centerObstacleDepth
+float32 rightObstacleDepth
