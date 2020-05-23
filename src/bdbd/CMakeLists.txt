@@ -64,11 +64,8 @@ add_message_files(
 )
 
 ## Generate services in the 'srv' folder
-# add_service_files(
-#   FILES
-#   Service1.srv
-#   Service2.srv
-# )
+add_service_files(FILES
+   NodeCommand.srv)
 
 ## Generate actions in the 'action' folder
 # add_action_files(
@@ -81,6 +78,7 @@ add_message_files(
 generate_messages(
   DEPENDENCIES
   std_msgs
+  sensor_msgs
   audio_common_msgs
 )
 
@@ -114,9 +112,9 @@ generate_messages(
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
+   INCLUDE_DIRS
 #  LIBRARIES bdbd
-#  CATKIN_DEPENDS rospy std_msgs
+   CATKIN_DEPENDS message_runtime rospy std_msgs roscpp sensor_msgs audio_common_msgs
 #  DEPENDS system_lib
 )
 
@@ -127,7 +125,6 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-# include
   ${catkin_INCLUDE_DIRS}
   ${realsense2_INCLUDE_DIR}
 )
@@ -158,7 +155,6 @@ add_executable(detectBlocking src/detectBlocking.cpp)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
-# add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(
@@ -181,6 +177,7 @@ target_link_libraries(
   ${catkin_LIBRARIES}
 )
 
+add_dependencies(detectBlocking bdbd_generate_messages_cpp)
 target_link_libraries(
   detectBlocking
   ${catkin_LIBRARIES}
@@ -203,6 +200,7 @@ catkin_install_python(PROGRAMS
   nodes/hearit
   nodes/pantilt
   nodes/mtnn_faces
+  nodes/nodeManagement
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

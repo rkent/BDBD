@@ -12,6 +12,7 @@ PERIOD = 0.1 # update rate in seconds
 class SayIt():
     def __init__(self):
         self._espeak = ESpeakNG(voice='en-gb-x-gbclan')
+        self._espeak.volume = 40
         rospy.init_node('sayit')
         self._sub = rospy.Subscriber('sayit/text', String, self.on_sayit_text)
         self._queue = Queue()

@@ -23,14 +23,14 @@ class DetectBlocking
     ros::NodeHandle nh_;
     ros::Subscriber pc_sub;
     ros::Publisher rb_pub;
-    const float min_depth = .22;
-    const float max_depth = .50;
+    const float min_depth = .25;
+    const float max_depth = .55;
     const float min_height = .08;
-    const float max_height = .11;
+    const float max_height = .13;
     const int tan_divisions = 12;
     const int depth_divisions = 12;
     const float min_tan = -0.45;
-    const float max_tan = 0.40;
+    const float max_tan = 0.45;
     int frame_count = 0;
 
     public:
@@ -108,6 +108,9 @@ class DetectBlocking
 
                 float best_cell_depth = 0.0;
                 for (auto& point: points) {
+                    if (point.z == 0.0) {
+                        continue; // not a valid datapoint
+                    }
                     if (point.y > min_height && point.y < max_height) {
                         // This point is valid road
                         if (point.z > best_cell_depth) {
@@ -144,6 +147,10 @@ class DetectBlocking
         rb.rightObstacleDepth = obstacle_depths[2];
         rb_pub.publish(rb);
 
+        if (frame_count % 10 != 0) {
+            return;
+        }
+
 /*
         std::cout << std::fixed;
         auto end = std::chrono::steady_clock::now();
@@ -156,11 +163,10 @@ class DetectBlocking
             string name = k == 0 ? "left" : k == 1 ? "center" : "right";
             cout << "Region " << name << " road_depths: " << road_depths[k] << " Obstacle depths:" << obstacle_depths[k] << "\n";
         }
-        cout << "First obstacle: " << opoint.x << " " << opoint.y << " " << opoint.z << "\n";
 
 /*
-        if (frame_count % 10 != 0) {
-            return;
+        if (opoint.z != 0.0) {
+            cout << "First obstacle: " << opoint.x << " " << opoint.y << " " << opoint.z << "\n";
         }
 
         // vertical slice

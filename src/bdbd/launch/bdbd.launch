@@ -5,12 +5,12 @@
     <node name='detectnet' pkg='ros_deep_learning' type='detectnet' />
     -->
     <!-- <remap from='/detectnet/image_in' to='/jetbot_camera_1/raw' /> -->
-    <node name='gamepad' pkg='bdbd' type='gamepad' ns='bdbd'/>
-    <node name='motors' pkg='bdbd' type='motors' ns='bdbd' />
-    <node name='domotors' pkg='bdbd' type='domotors' ns='bdbd' />
     <node name='sayit' pkg='bdbd' type='sayit' ns='bdbd' />
     <node name='hearit' pkg='bdbd' type='hearit' ns='bdbd' />
     <node name='pantilt' pkg='bdbd' type='pantilt' ns='bdbd' />
-    <node name='jetbot_camera_1' pkg='jetbot_ros' type='jetbot_camera' />
+    <!-- <node name='jetbot_camera_1' pkg='jetbot_ros' type='jetbot_camera' /> -->
+    <node name='detectBlocking' pkg='bdbd' type='detectBlocking' ns='bdbd' />
+    <include file='#(dirname)/motion.launch' />
     <include file='$(dirname)/sr305.launch' />
+    <include file='$(dirname)/t265.launch' />
 </launch>

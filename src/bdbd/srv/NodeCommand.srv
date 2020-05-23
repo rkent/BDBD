@@ -1,0 +1,5 @@
+# Commands to start or stop launch files
+string filename # without launch suffix, like 'motion'
+string command # start, stop, status
+---
+string response
