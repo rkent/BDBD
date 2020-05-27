@@ -1,0 +1,12 @@
+<launch>
+    <node pkg="tf" type="static_transform_publisher" name="t265_odom_frame_tf" args="0 0 0 0 0 0 /map /t265_odom_frame 100"/>
+    <node pkg="tf" type="static_transform_publisher" name="base_link_tf" args="-0.013 -0.019 -0.090 0 0 0 /t265_pose_frame /base_link 100"/>
+    <node pkg="tf" type="static_transform_publisher" name="floor_tf" args="0 0 -0.0508 0 0 0 /base_link /floor 100"/>
+    <node pkg="tf" type="static_transform_publisher" name="mike_tf" args="-0.052 0 0.119 0 0 0 /base_link /mike 100"/>
+    <node pkg="tf" type="static_transform_publisher" name="left_wheel_tf" args="-0.144 .075 0 0 0 0 /floor /left_wheel 100"/>
+    <node pkg="tf" type="static_transform_publisher" name="right_wheel_tf" args="-0.144 -.075 0 0 0 0 /floor /right_wheel 100"/>
+    <node pkg="tf" type="static_transform_publisher" name="pantilt_link_tf" args="0 0 0 0 0 0 /base_link /pantilt_link 100"/>
+    <node pkg="tf" type="static_transform_publisher" name="pantilt_tilt_cor_tf" args="0 0 0 0 0 0 /pantilt_pan_base /pantilt_tilt_cor 100"/>
+    <node pkg="tf" type="static_transform_publisher" name="pantilt_tilt_camera_tf" args="0 0 0 0 0 0 /pantilt_tilt_base /pantilt_tilt_camera 100"/>
+    <node pkg="tf" type="static_transform_publisher" name="sr305_link_tf" args="0.010 0.003 0.065 0 0 0 /base_link /sr305_link 100"/>
+</launch>

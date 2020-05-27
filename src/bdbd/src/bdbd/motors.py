@@ -23,7 +23,7 @@ motor_right = motor_driver.getMotor(motor_right_ID)
 
 # sets motor speed between [-1.0, 1.0]
 def set_speed(motor_ID, value):
-    max_pwm = 115.0
+    max_pwm = 255.0
     #max_pwm = 255.0
     speed = int(min(max(abs(value * max_pwm), 0), max_pwm))
 

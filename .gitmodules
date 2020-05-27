@@ -19,3 +19,6 @@
 [submodule "librealsense"]
 	path = librealsense
 	url = git@github.com:rkent/librealsense.git
+[submodule "src/timed_roslaunch"]
+	path = src/timed_roslaunch
+	url = https://github.com/MoriKen254/timed_roslaunch.git

@@ -16,6 +16,8 @@ find_package(catkin REQUIRED COMPONENTS
   image_transport
   audio_common_msgs
   message_generation
+  nav_msgs
+  tf
 )
 
 ## System dependencies are found with CMake's conventions
@@ -196,6 +198,7 @@ catkin_install_python(PROGRAMS
   nodes/gamepad
   nodes/sayit
   nodes/domotors
+  nodes/explore
   nodes/motors
   nodes/hearit
   nodes/pantilt

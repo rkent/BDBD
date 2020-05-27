@@ -26,7 +26,7 @@ class DetectBlocking
     const float min_depth = .25;
     const float max_depth = .55;
     const float min_height = .08;
-    const float max_height = .13;
+    const float max_height = .14;
     const int tan_divisions = 12;
     const int depth_divisions = 12;
     const float min_tan = -0.45;
@@ -44,6 +44,7 @@ class DetectBlocking
     ~DetectBlocking()
     {
     }
+
 
     void pcCb(const sensor_msgs::PointCloud2ConstPtr& pc2msg)
     {
@@ -147,9 +148,9 @@ class DetectBlocking
         rb.rightObstacleDepth = obstacle_depths[2];
         rb_pub.publish(rb);
 
-        if (frame_count % 10 != 0) {
-            return;
-        }
+        //if (frame_count % 10 != 0) {
+        //    return;
+        // }
 
 /*
         std::cout << std::fixed;
@@ -182,7 +183,19 @@ class DetectBlocking
             cout << setw(5) << pointMatrix[depth_divisions/2][j].size();
         }
         cout << "\n";
+
+        // Print out a point in each horizontal bin
+        cout << setprecision(3);
+        for (int j = 0; j < tan_divisions; j++) {
+            if (pointMatrix[depth_divisions/2][j].size() > 0) {
+                cout << "( " << pointMatrix[depth_divisions/2][j][0].x;
+                cout << " , " << pointMatrix[depth_divisions/2][j][0].y;
+                cout << " , " << pointMatrix[depth_divisions/2][j][0].z;
+                cout << " ) ";          }
+        }
+        cout << "\n";
         // search for low-count bins
+        /*
         for (int i = 0; i < depth_divisions; i++) {
             for (int j = 0; j < tan_divisions; j++) {
                 auto points = pointMatrix[i][j];
@@ -191,6 +204,7 @@ class DetectBlocking
                 }
             }
         }
+        */
 /* */
     }
 };
