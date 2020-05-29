@@ -23,9 +23,9 @@ except:
 MIN_RATE = 0.2 # how long to wait for a message until we panic and stop
 OBSTACLE_CLOSE_CENTER = 0.15 # how close is too close for obstacle, in meters
 OBSTACLE_CLOSE_SIDES = 0.30
-DROPOFF_CLOSE = 0.3 # how much viable road before we declare a dropoff
+DROPOFF_CLOSE = 0.2 # how much viable road before we declare a dropoff
 HYST = 0.25 # fractional change required to change state
-SPEED = 0.7
+SPEED = 0.8
 REVERSE_DISTANCE = 0.10 # How far to back up after forward obstacle
 REVERSE_ANGLE = 55 # degrees to change direction after a reverse
 D_TO_R = 3.1415926535 / 180. # degrees to radians
@@ -56,7 +56,9 @@ class Direction(Enum):
     ROTATE_RIGHT = 4
     EXPLORE = 5
     STOPPED = 6
-    ROTATE = 7 # choose best direction of rotation
+    ROTATE_LEFT_CLEAR = 7 # rotate until clear
+    ROTATE_RIGHT_CLEAR = 8
+    ROTATE = 9 # choose best direction of rotation
 
 # classes
 class Objective():
@@ -109,6 +111,10 @@ def msg_cb(msg):
     queue.put(msg)
 
 def updateBlocking(roadBlocking, blocking):
+    rospy.loginfo('roadBlocking: obstacles {:5.3f} {:5.3f} {:5.3f} road: {:5.3f} {:5.3f} {:5.3f}'.format(
+        roadBlocking.leftObstacleDepth, roadBlocking.centerObstacleDepth, roadBlocking.rightObstacleDepth,
+        roadBlocking.leftRoadDepth, roadBlocking.centerRoadDepth, roadBlocking.rightRoadDepth
+    ))
     # update blocking state from distances
 
     factor = (1. + HYST) if Blocking.LEFT in blocking else 1.0
@@ -209,36 +215,32 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
                 objectives.pop(0)
                 continue
 
+        elif direction == Direction.ROTATE_LEFT_CLEAR:
+            if {Blocking.CENTER, Blocking.DOWN_CENTER, Blocking.LEFT, Blocking.DOWN_LEFT} & blocking:
+                new_state = Moving.ROTATE_LEFT
+            else:
+                objectives.pop(0)
+
+        elif direction == Direction.ROTATE_RIGHT_CLEAR:
+            if {Blocking.CENTER, Blocking.DOWN_CENTER, Blocking.RIGHT, Blocking.DOWN_RIGHT} & blocking:
+                new_state = Moving.ROTATE_RIGHT
+            else:
+                objectives.pop(0)
+
         elif direction == Direction.ROTATE:
             # choose a new rotation direction based on current position
             br = {Blocking.RIGHT, Blocking.DOWN_RIGHT} & blocking
             bl = {Blocking.LEFT, Blocking.DOWN_LEFT} & blocking
-            if br and bl:
-                # keep reversing
-                new_pose = tfl.transformPose('base_link', current_pose)
-                new_pose.pose.position.x -= REVERSE_DISTANCE
-                new_pose = tfl.transformPose('map', new_pose)
-                objectives.insert(0, Objective(Direction.REVERSE, new_pose))
-                new_state = Moving.REVERSE
-                break
-            elif br:
-                new_direction = Direction.ROTATE_LEFT
-            elif bl:
-                new_direction = Direction.ROTATE_RIGHT
+            bc = {Blocking.CENTER, Blocking.DOWN_CENTER} & blocking
+            if not bl:
+                new_direction = Direction.ROTATE_LEFT_CLEAR
+            elif not br:
+                new_direction = Direction.ROTATE_RIGHT_CLEAR
             else:
-                new_direction = random.choice([Direction.ROTATE_LEFT, Direction.ROTATE_RIGHT])
-        
-            rotation_angle = REVERSE_ANGLE if new_direction == Direction.ROTATE_LEFT else -REVERSE_ANGLE
-            qrotation = tf.transformations.quaternion_from_euler(0., 0., rotation_angle * D_TO_R)
-            # rospy.loginfo('qrotation: {}'.format(qrotation))
-            # rospy.loginfo('orientation: {}'.format(current_pose.pose.orientation))
-            qnew = tf.transformations.quaternion_multiply(qrotation, q_to_array(current_pose.pose.orientation))
-            new_pose = tfl.transformPose('map', current_pose)
-            new_pose.pose.orientation = array_to_q(qnew)
-            # delete the Rotation, replace with new rotation direction
+                new_direction = random.choice([Direction.ROTATE_LEFT_CLEAR, Direction.ROTATE_RIGHT_CLEAR])
+
             objectives.pop(0)
-            objectives.insert(0, Objective(new_direction, new_pose))
-            new_state = Moving.ROTATE_LEFT if new_direction == Direction.ROTATE_LEFT else Moving.ROTATE_RIGHT
+            objectives.insert(0, Objective(new_direction, None))
 
         elif direction == Direction.ROTATE_LEFT:
             theta = poseTheta(current_pose, target_pose)
@@ -274,8 +276,10 @@ def do_movement(moving_state):
         left, right = (-.7 * SPEED, -.7 * SPEED)
     elif moving_state == Moving.LEFT:
         right = SPEED
+        left = .5 * SPEED
     elif moving_state == Moving.RIGHT:
         left = SPEED
+        right = .5 * SPEED
     elif moving_state == Moving.ROTATE_RIGHT:
         left = SPEED
         right = -SPEED
@@ -329,24 +333,23 @@ def main():
             elif msg_type == 'bdbd/RoadBlocking':
                 if not tfl.canTransform('base_link', 'map', rospy.Time()):
                     rospy.logwarn('No transform from map to base_link')
-                    continue
+                    new_state = Moving.STOPPED
+                else:
+                    updateBlocking(msg, blocking)
+                    last_pose = current_pose
+                    current_pose = PoseStamped()
+                    current_pose.header.frame_id = 'base_link'
+                    current_pose.pose.orientation.w = 1.0
+                    current_pose = tfl.transformPose('map', current_pose)
+                
+                    if time.time() < lastChange + DYNAMIC_DELAY:
+                        #rospy.loginfo('Give change time')
+                        continue
+                    if last_pose is None:
+                        rospy.loginfo('No last_pose')
+                        continue
+                    new_state = getNewMovement(objectives, blocking, current_pose, last_pose, tfl)
 
-                updateBlocking(msg, blocking)
-                last_pose = current_pose
-                current_pose = PoseStamped()
-                current_pose.header.frame_id = 'base_link'
-                current_pose.pose.orientation.w = 1.0
-                current_pose = tfl.transformPose('map', current_pose)
-            
-                if time.time() < lastChange + DYNAMIC_DELAY:
-                    #rospy.loginfo('Give change time')
-                    continue
-
-                if last_pose is None:
-                    rospy.loginfo('No last_pose')
-                    continue
-
-                new_state = getNewMovement(objectives, blocking, current_pose, last_pose, tfl)
                 newleft, newright = do_movement(new_state)
                 if newleft != left or newright != right:
                     rospy.loginfo('left is {:6.2f} right is {:6.2f}'.format(newleft, newright))
