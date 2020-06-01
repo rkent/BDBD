@@ -1,0 +1,4 @@
+<launch>
+    <node name='sayit' pkg='bdbd' type='sayit' ns='bdbd' output='screen'/>
+    <node name='hearit' pkg='bdbd' type='hearit' ns='bdbd' output='screen'/>
+</launch>

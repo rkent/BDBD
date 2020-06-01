@@ -4,6 +4,7 @@
 
   <group ns="$(arg camera)">
     <include file="$(find realsense2_camera)/launch/includes/nodelet.launch.xml">
+      <arg name="initial_reset"     value="true"/>
       <arg name="serial_no"         value="$(arg serial_no)"/>
       <arg name="align_depth"       value="false"/>
       <arg name="depth_width"       value="640"/>

@@ -1,0 +1,3 @@
+<launch>
+    <node name='detectBlocking' pkg='bdbd' type='detectBlocking' ns='bdbd' output='screen' />
+</launch>

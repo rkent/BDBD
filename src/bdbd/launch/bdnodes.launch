@@ -1,0 +1,3 @@
+<launch>
+    <node name='bdnodes' pkg='bdbd' type='bdnodes' output='screen' />
+</launch>

@@ -1,0 +1,3 @@
+<launch>
+    <node name='motors' pkg='bdbd' type='motors' ns='bdbd' output='screen' />
+</launch>

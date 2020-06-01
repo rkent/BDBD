@@ -1,0 +1,3 @@
+<launch>
+    <node name='hearit' pkg='bdbd' type='hearit' ns='bdbd' output='screen'/>
+</launch>

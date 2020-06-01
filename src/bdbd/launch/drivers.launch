@@ -1,0 +1,3 @@
+<launch>
+    <node name='drivers' pkg='bdbd' type='drivers' ns='bdbd' output='screen'/>
+</launch>

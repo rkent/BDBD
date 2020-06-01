@@ -27,7 +27,7 @@ def indexFromName(pa, name):
             return i
         devices.append(device['name'])
 
-    log.error("Could not find input device, available devices: " + str(devices))
+    rospy.logerr("Could not find input device, available devices: " + str(devices))
     raise ValueError('device not found')
 
 def main():
@@ -42,6 +42,7 @@ def main():
                     audio, angle = r.listen(source)
                     #print(audio.get_wav_data()[0:40])
                     rospy.loginfo('Sound heard at angle: ' + str(angle))
+                    print('Sound heard at angle: ' + str(angle))
                     if audiopub.get_num_connections() > 0:
                         audiopub.publish(audio.get_wav_data())
                     text = recognizer(audio, credentials_json=google_key)
@@ -52,10 +53,11 @@ def main():
                 voiceQueue.put(['', angle])
             except:
                 rospy.logwarn('Error in getVoice')
-                rospy.logerror(traceback.format_exc())
+                rospy.logerr(traceback.format_exc())
                 break
 
     rospy.init_node('hearit')
+    rospy.loginfo('{} starting with PID {}'.format(__name__, os.getpid()))
     textpub = rospy.Publisher('hearit/angled_text', AngledText, queue_size=10)
     audiopub = rospy.Publisher('audio', AudioData, queue_size=10)
 
@@ -82,7 +84,7 @@ def main():
                 textpub.publish(statement, angle)
             rospy.sleep(RATE)
         except:
-            rospy.logerror(traceback.format_exc())
+            rospy.logerr(traceback.format_exc())
             break
 
     continueThread = False

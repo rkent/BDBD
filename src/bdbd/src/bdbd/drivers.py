@@ -1,13 +1,16 @@
 #!/usr/bin/env python
+'''
+    This ROS node combines many actuator activations that typically require python drivers.
+'''
 import rospy
 import time
 
+### robot wheel motors
+# Adapted from https://github.com/dusty-nv/jetbot_ros/blob/master/scripts/jetbot_motors.py
+# Adapted by R. Kent James <kent@caspia.com> for bdbd robot
 from Adafruit_MotorHAT import Adafruit_MotorHAT
 from std_msgs.msg import String
 from bdbd.msg import MotorsRaw
-
-# Adapted from https://github.com/dusty-nv/jetbot_ros/blob/master/scripts/jetbot_motors.py
-# Adapted by R. Kent James <kent@caspia.com> for bdbd robot
 
 BASE_SPEED = 0.4
 MAX_SPEED = 1.0
@@ -21,9 +24,16 @@ motor_right_ID = 2
 motor_left = motor_driver.getMotor(motor_left_ID)
 motor_right = motor_driver.getMotor(motor_right_ID)
 
+### pan/tilt hat
+from bdbd.msg import PanTilt
+from libpantilt.PCA9685 import PCA9685
+panTilt = PCA9685()
+panTilt.setPWMFreq(50)
+
+### Motor functions
 # sets motor speed between [-1.0, 1.0]
 def set_speed(motor_ID, value):
-    max_pwm = 255.0
+    max_pwm = 255.0 # This allows for full 12 volt output
     #max_pwm = 255.0
     speed = int(min(max(abs(value * max_pwm), 0), max_pwm))
 
@@ -42,7 +52,6 @@ def set_speed(motor_ID, value):
     else:
         motor.run(Adafruit_MotorHAT.BACKWARD)
 
-
 # stops all motors
 def all_stop():
     motor_left.setSpeed(0)
@@ -50,7 +59,6 @@ def all_stop():
 
     motor_left.run(Adafruit_MotorHAT.RELEASE)
     motor_right.run(Adafruit_MotorHAT.RELEASE)
-
 
 # directional commands (degree, speed)
 def on_cmd_dir(msg):
@@ -95,16 +103,32 @@ def on_cmd_str(msg):
     else:
         rospy.logerr(rospy.get_caller_id() + ' invalid cmd_str=%s', msg.data)
 
+### pan/tilt functions
+class CenterPanTilt():
+    pan = 90.0
+    tilt = 45.0
+
+def on_pantilt(msg):
+    panTilt.setRotationAngle(1, max(0.0, min(180.0, msg.pan)))
+    panTilt.setRotationAngle(0, max(0.0, min(90.0, msg.tilt)))
+
 def main():
     # stop the motors as precaution
     all_stop()
 
+    # initialize pan and tilt
+    on_pantilt(CenterPanTilt)
+
     # setup ros node
-    rospy.init_node('motors')
-    
-    rospy.Subscriber('~cmd_dir', String, on_cmd_dir)
-    rospy.Subscriber('~cmd_raw', MotorsRaw, on_cmd_raw)
-    rospy.Subscriber('~cmd_str', String, on_cmd_str)
+    rospy.init_node('drivers')
+
+    ### Motors
+    rospy.Subscriber('motors/cmd_dir', String, on_cmd_dir)
+    rospy.Subscriber('motors/cmd_raw', MotorsRaw, on_cmd_raw)
+    rospy.Subscriber('motors/cmd_str', String, on_cmd_str)
+
+    ### Pan/Tilt
+    rospy.Subscriber('pantilt', PanTilt, on_pantilt)
 
     # start running
     try:
@@ -114,6 +138,8 @@ def main():
     finally:
         # stop motors before exiting
         all_stop()
+        # center pan/tilt
+        on_pantilt(CenterPanTilt)
 
 if __name__ == '__main__':
     main()

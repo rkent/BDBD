@@ -12,6 +12,8 @@ import tf
 from bdbd.msg import RoadBlocking
 from bdbd.msg import MotorsRaw
 from bdbd.msg import GamepadEvent
+from bdbd.msg import AngledText
+from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped, Quaternion
 
 try:
@@ -21,9 +23,9 @@ except:
 
 # constants
 MIN_RATE = 0.2 # how long to wait for a message until we panic and stop
-OBSTACLE_CLOSE_CENTER = 0.15 # how close is too close for obstacle, in meters
+OBSTACLE_CLOSE_CENTER = 0.20 # how close is too close for obstacle, in meters
 OBSTACLE_CLOSE_SIDES = 0.30
-DROPOFF_CLOSE = 0.2 # how much viable road before we declare a dropoff
+DROPOFF_CLOSE = 0.30 # how much viable road before we declare a dropoff
 HYST = 0.25 # fractional change required to change state
 SPEED = 0.8
 REVERSE_DISTANCE = 0.10 # How far to back up after forward obstacle
@@ -111,10 +113,10 @@ def msg_cb(msg):
     queue.put(msg)
 
 def updateBlocking(roadBlocking, blocking):
-    rospy.loginfo('roadBlocking: obstacles {:5.3f} {:5.3f} {:5.3f} road: {:5.3f} {:5.3f} {:5.3f}'.format(
-        roadBlocking.leftObstacleDepth, roadBlocking.centerObstacleDepth, roadBlocking.rightObstacleDepth,
-        roadBlocking.leftRoadDepth, roadBlocking.centerRoadDepth, roadBlocking.rightRoadDepth
-    ))
+    #rospy.loginfo('roadBlocking: obstacles {:5.3f} {:5.3f} {:5.3f} road: {:5.3f} {:5.3f} {:5.3f}'.format(
+    #    roadBlocking.leftObstacleDepth, roadBlocking.centerObstacleDepth, roadBlocking.rightObstacleDepth,
+    #    roadBlocking.leftRoadDepth, roadBlocking.centerRoadDepth, roadBlocking.rightRoadDepth
+    #))
     # update blocking state from distances
 
     factor = (1. + HYST) if Blocking.LEFT in blocking else 1.0
@@ -171,8 +173,7 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
             directions = []
             for objective in objectives:
                 directions.append(objective.direction) 
-            rospy.loginfo('objectives.direction: {}'.format(directions))
-            rospy.loginfo('getNewMovement direction: {} blocking: {}'.format(direction, blocking))
+            rospy.loginfo('objectives.direction: {} blocking: {}'.format(direction, blocking))
         target_pose = objectives and objectives[0].poseTarget or None
         # rospy.loginfo('current_pose: {}'.format(current_pose))
         current_pose = tfl.transformPose('map', current_pose)
@@ -228,6 +229,7 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
                 objectives.pop(0)
 
         elif direction == Direction.ROTATE:
+            objectives.pop(0)
             # choose a new rotation direction based on current position
             br = {Blocking.RIGHT, Blocking.DOWN_RIGHT} & blocking
             bl = {Blocking.LEFT, Blocking.DOWN_LEFT} & blocking
@@ -238,9 +240,25 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
                 new_direction = Direction.ROTATE_RIGHT_CLEAR
             else:
                 new_direction = random.choice([Direction.ROTATE_LEFT_CLEAR, Direction.ROTATE_RIGHT_CLEAR])
+            rotate_direction = Direction.ROTATE_LEFT if new_direction == Direction.ROTATE_LEFT_CLEAR else Direction.ROTATE_RIGHT
 
-            objectives.pop(0)
             objectives.insert(0, Objective(new_direction, None))
+
+            # But first rotate a minimum amount
+            dtheta = REVERSE_ANGLE if rotate_direction == Direction.ROTATE_LEFT else -REVERSE_ANGLE
+            q_orig = tf.transformations.quaternion_from_euler(0, 0, 0)
+            q_rot = tf.transformations.quaternion_from_euler(0, 0, dtheta * D_TO_R)
+            q_new = tf.transformations.quaternion_multiply(q_rot, q_orig)
+            o_new = Quaternion();
+            o_new.x = q_new[0]
+            o_new.y = q_new[1]
+            o_new.z = q_new[2]
+            o_new.w = q_new[3]
+            pose_new = tfl.transformPose('base_link', current_pose)
+            pose_new.pose.orientation = o_new
+            pose_new = tfl.transformPose('map', pose_new)
+            objectives.insert(0, Objective(rotate_direction, pose_new))
+            new_state = Moving.ROTATE_LEFT if rotate_direction == Direction.ROTATE_LEFT else Moving.ROTATE_RIGHT
 
         elif direction == Direction.ROTATE_LEFT:
             theta = poseTheta(current_pose, target_pose)
@@ -275,11 +293,11 @@ def do_movement(moving_state):
     elif moving_state == Moving.REVERSE:
         left, right = (-.7 * SPEED, -.7 * SPEED)
     elif moving_state == Moving.LEFT:
-        right = SPEED
-        left = .5 * SPEED
+        right = 1.2 * SPEED
+        left = .4 * SPEED
     elif moving_state == Moving.RIGHT:
-        left = SPEED
-        right = .5 * SPEED
+        left = 1.2 * SPEED
+        right = .4 * SPEED
     elif moving_state == Moving.ROTATE_RIGHT:
         left = SPEED
         right = -SPEED
@@ -299,7 +317,9 @@ def main():
     rospy.sleep(2.0)
     blocking_sub = rospy.Subscriber('/bdbd/detectBlocking/roadBlocking', RoadBlocking, msg_cb)
     gamepad_sub = rospy.Subscriber('/bdbd/gamepad/events', GamepadEvent, msg_cb)
+    hearit_sub = rospy.Subscriber('/bdbd/hearit/angled_text', AngledText, msg_cb)
     motor_pub = rospy.Publisher('/bdbd/motors/cmd_raw', MotorsRaw, queue_size=10)
+    sayit_pub = rospy.Publisher('/bdbd/sayit/text', String, queue_size=10)
     objectives = []
     blocking = set()
     actual_state = Moving.STOPPED
@@ -355,13 +375,25 @@ def main():
                     rospy.loginfo('left is {:6.2f} right is {:6.2f}'.format(newleft, newright))
                     rospy.loginfo('blocking: {}'.format(blocking))
                     lastChange = time.time()
+                    motor_pub.publish(newleft, newright)
                 left = newleft
                 right = newright
-                motor_pub.publish(left, right)
 
                 if (actual_state != new_state):
                     rospy.loginfo('Robot changing state to ' + str(new_state))
                     actual_state = new_state
+
+            elif msg_type == 'bdbd/AngledText':
+                rospy.loginfo('explore heard: {}'.format(msg.text))
+                new_direction = getDirectionFromSaying(msg.text.lower())
+                rospy.loginfo('new_direction is {}'.format(new_direction))
+                if new_direction == Direction.FORWARD:
+                    sayit_pub.publish('OK, forward')
+                    objectives = [Objective(Direction.EXPLORE, None)]
+                elif new_direction == Direction.STOPPED:
+                    sayit_pub.publish('OK, stopping')
+                    objectives = []
+    
             else:
                 rospy.logwarn("Unexpected message type {}".format(msg_type))
 

@@ -1,0 +1,3 @@
+<launch>
+    <node name='gamepad' pkg='bdbd' type='gamepad' ns='bdbd' output='screen' />
+</launch>

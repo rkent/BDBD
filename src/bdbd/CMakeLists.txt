@@ -1,3 +1,5 @@
+## This is for the BDBD robot package
+
 cmake_minimum_required(VERSION 2.8.3)
 project(bdbd)
 
@@ -23,6 +25,7 @@ find_package(catkin REQUIRED COMPONENTS
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 find_package(OpenCV REQUIRED)
+find_package(Eigen3 REQUIRED)
 find_package(realsense2 2.32.1)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
@@ -129,6 +132,7 @@ catkin_package(
 include_directories(
   ${catkin_INCLUDE_DIRS}
   ${realsense2_INCLUDE_DIR}
+  ${EIGEN3_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
@@ -198,12 +202,13 @@ catkin_install_python(PROGRAMS
   nodes/gamepad
   nodes/sayit
   nodes/domotors
+  nodes/drivers
   nodes/explore
   nodes/motors
   nodes/hearit
   nodes/pantilt
   nodes/mtnn_faces
-  nodes/nodeManagement
+  nodes/bdnodes
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

@@ -1,0 +1,3 @@
+<launch>
+    <node name='do_motors' pkg='bdbd' type='do_motors' ns='bdbd' />
+</launch>

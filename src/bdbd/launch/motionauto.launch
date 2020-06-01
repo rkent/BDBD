@@ -2,7 +2,7 @@
     <node name='detectBlocking' pkg='bdbd' type='detectBlocking' ns='bdbd' />
     <node name='gamepad' pkg='bdbd' type='gamepad' ns='bdbd'/>
     <node name='motors' pkg='bdbd' type='motors' ns='bdbd' />
-    <include file='$(dirname)/sr305.launch' />
+    <!-- <include file='$(dirname)/sr305.launch' /> -->
 
     <!-- <include file='$(dirname)/t265min.launch' /> -->
     <!-- t265 is delayed since it seems to die if started too soon after sr305
