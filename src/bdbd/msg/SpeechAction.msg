@@ -1,1 +1,2 @@
 string command
+string detail

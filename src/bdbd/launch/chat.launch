@@ -1,0 +1,3 @@
+<launch>
+    <node name='chat' pkg='bdbd' type='chat' ns='bdbd' output='screen' />
+</launch>

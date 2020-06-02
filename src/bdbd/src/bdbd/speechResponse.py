@@ -18,13 +18,17 @@ def main():
 
         # robot commands
         action = None
+        detail = None
         if words[0] == 'robot':
             if words[1].startswith('explore'):
                 action = 'explore'
             elif words[1] == 'stop':
                 action = 'stop'
+        else:
+            action = 'chat'
+            detail = statement
         if action is not None:
-            action_pub.publish(action)
+            action_pub.publish(action, detail)
             rospy.loginfo('speechResponse requested action <{}>'.format(action))
 
     rospy.init_node('speechResponse')
