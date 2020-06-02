@@ -66,6 +66,7 @@ add_message_files(
   PanTilt.msg
   NameProb.msg
   RoadBlocking.msg
+  SpeechAction.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -199,16 +200,17 @@ target_link_libraries(
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
-  nodes/gamepad
-  nodes/sayit
+  nodes/bdnodes
   nodes/domotors
   nodes/drivers
   nodes/explore
-  nodes/motors
+  nodes/gamepad
   nodes/hearit
-  nodes/pantilt
+  nodes/motors
   nodes/mtnn_faces
-  nodes/bdnodes
+  nodes/pantilt
+  nodes/sayit
+  nodes/speechResponse
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

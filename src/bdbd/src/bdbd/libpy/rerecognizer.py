@@ -5,9 +5,15 @@ import math
 import collections
 import audioop
 from speech_recognition import AudioSource, Recognizer, AudioData
-from respeaker.tuning import find
+from bdbd.libpy.respeaker.tuning import find
 from numpy import median
 dev = find()
+
+def is_speech():
+    if dev.read("SPEECHDETECTED") and dev.read("VOICEACTIVITY"):
+        return True
+    else:
+        return False
 
 class ReRecognizer(Recognizer):
     def __init__(self):
@@ -61,7 +67,7 @@ class ReRecognizer(Recognizer):
                     # detect whether speaking has started on audio input
                     energy = audioop.rms(buffer, source.SAMPLE_WIDTH)  # energy of the audio signal
                     #if energy > self.energy_threshold: break
-                    if dev.is_voice() == 1: break
+                    if is_speech(): break
 
                     # dynamically adjust the energy threshold using asymmetric weighted average
                     if self.dynamic_energy_threshold:
@@ -97,7 +103,7 @@ class ReRecognizer(Recognizer):
                 #    pause_count = 0
                 #else:
                 #    pause_count += 1
-                if dev.is_voice() == 1:
+                if is_speech():
                     pause_count = 0
                     angles.append(dev.direction)
                 else:

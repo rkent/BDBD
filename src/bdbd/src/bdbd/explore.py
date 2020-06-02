@@ -13,6 +13,7 @@ from bdbd.msg import RoadBlocking
 from bdbd.msg import MotorsRaw
 from bdbd.msg import GamepadEvent
 from bdbd.msg import AngledText
+from bdbd.msg import SpeechAction
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped, Quaternion
 
@@ -154,14 +155,6 @@ def updateBlocking(roadBlocking, blocking):
         blocking.add(Blocking.DOWN_RIGHT)
     else:
         blocking.discard(Blocking.DOWN_RIGHT)
-
-def getDirectionFromSaying(saying):
-    if 'robot' in saying:
-        if 'go forward' in saying:
-            return Direction.FORWARD
-        if 'stop' in saying:
-            return Direction.STOPPED
-    return None
 
 def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
     # Determine a new direction and state
@@ -317,7 +310,7 @@ def main():
     rospy.sleep(2.0)
     blocking_sub = rospy.Subscriber('/bdbd/detectBlocking/roadBlocking', RoadBlocking, msg_cb)
     gamepad_sub = rospy.Subscriber('/bdbd/gamepad/events', GamepadEvent, msg_cb)
-    hearit_sub = rospy.Subscriber('/bdbd/hearit/angled_text', AngledText, msg_cb)
+    action_sub = rospy.Subscriber('speechResponse/action', SpeechAction, msg_cb)
     motor_pub = rospy.Publisher('/bdbd/motors/cmd_raw', MotorsRaw, queue_size=10)
     sayit_pub = rospy.Publisher('/bdbd/sayit/text', String, queue_size=10)
     objectives = []
@@ -383,15 +376,17 @@ def main():
                     rospy.loginfo('Robot changing state to ' + str(new_state))
                     actual_state = new_state
 
-            elif msg_type == 'bdbd/AngledText':
-                rospy.loginfo('explore heard: {}'.format(msg.text))
-                new_direction = getDirectionFromSaying(msg.text.lower())
-                rospy.loginfo('new_direction is {}'.format(new_direction))
-                if new_direction == Direction.FORWARD:
-                    sayit_pub.publish('OK, forward')
+            elif msg_type == 'bdbd/SpeechAction':
+                command = msg.command
+
+                rospy.loginfo('explore heard: {}'.format(command))
+                if command == 'explore':
+                    new_direction = Direction.FORWARD
+                    sayit_pub.publish('OK, start exploring')
                     objectives = [Objective(Direction.EXPLORE, None)]
-                elif new_direction == Direction.STOPPED:
-                    sayit_pub.publish('OK, stopping')
+                elif command == 'stop':
+                    new_direction = Direction.STOPPED
+                    sayit_pub.publish('OK, stop exploring')
                     objectives = []
     
             else:

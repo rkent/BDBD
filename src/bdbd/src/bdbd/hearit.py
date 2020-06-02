@@ -8,14 +8,14 @@ except:
 import os
 import traceback
 import speech_recognition as sr
-from rerecognizer import ReRecognizer
+from bdbd.libpy.rerecognizer import ReRecognizer
 import json
 import pyaudio
 import threading
 from bdbd.msg import AngledText
 from audio_common_msgs.msg import AudioData
 
-RATE = 1.0
+RATE = 0.01
 
 def indexFromName(pa, name):
     devices = []
@@ -57,7 +57,7 @@ def main():
                 break
 
     rospy.init_node('hearit')
-    rospy.loginfo('{} starting with PID {}'.format(__name__, os.getpid()))
+    rospy.loginfo('{} starting with PID {}'.format(os.path.basename(__file__), os.getpid()))
     textpub = rospy.Publisher('hearit/angled_text', AngledText, queue_size=10)
     audiopub = rospy.Publisher('audio', AudioData, queue_size=10)
 
