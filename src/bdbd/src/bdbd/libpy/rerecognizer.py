@@ -22,10 +22,11 @@ class ReRecognizer(Recognizer):
         False: waiting for voice, none detected.
         True: actively collecting voice data
     '''
-    def __init__(self, status_cb=None):
+    def __init__(self, status_cb=None, talking_get=None):
         super(ReRecognizer, self).__init__()
         self.status_cb = status_cb
         self.current_status = False
+        self.talking_get = talking_get
 
     def listen(self, source, timeout=None, phrase_time_limit=None, snowboy_configuration=None):
         """
@@ -78,7 +79,10 @@ class ReRecognizer(Recognizer):
                     # detect whether speaking has started on audio input
                     energy = audioop.rms(buffer, source.SAMPLE_WIDTH)  # energy of the audio signal
                     #if energy > self.energy_threshold: break
-                    if is_speech(): break
+
+                    # don't start listening when we are talking
+                    if not (self.talking_get and self.talking_get()):
+                        if is_speech(): break
 
                     # dynamically adjust the energy threshold using asymmetric weighted average
                     if self.dynamic_energy_threshold:

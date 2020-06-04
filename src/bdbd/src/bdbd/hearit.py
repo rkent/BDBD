@@ -31,6 +31,14 @@ def indexFromName(pa, name):
     rospy.logerr("Could not find input device, available devices: " + str(devices))
     raise ValueError('device not found')
 
+is_talking = False
+def talking_cb(msg):
+    global is_talking
+    is_talking = msg.data
+
+def talking_get():
+    return is_talking
+
 def main():
 
     continueThread = True
@@ -71,11 +79,12 @@ def main():
     textpub = rospy.Publisher('hearit/angled_text', AngledText, queue_size=10)
     audiopub = rospy.Publisher('audio', AudioData, queue_size=10)
     mikestatuspub = rospy.Publisher('mike/status', Bool, queue_size=10)
+    talking_sub = rospy.Subscriber('sayit/talking', Bool, talking_cb)
 
     pa = pyaudio.PyAudio()
     device = indexFromName(pa, 'respeaker')
     mic = sr.Microphone(device_index=device)
-    r = ReRecognizer(status_cb)
+    r = ReRecognizer(status_cb=status_cb, talking_get=talking_get)
     recognizer = r.recognize_google_cloud
     google_key = ''
     with open('/home/kent/secrets/stalwart-bliss-270019-7159f52eb443.json', 'r') as f:
