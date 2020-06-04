@@ -30,6 +30,11 @@ from libpantilt.PCA9685 import PCA9685
 panTilt = PCA9685()
 panTilt.setPWMFreq(50)
 
+# respeaker LEDs
+from bdbd.libpy.respeaker.usb_pixel_ring_v2 import find
+pixelring = find()
+
+# 
 ### Motor functions
 # sets motor speed between [-1.0, 1.0]
 def set_speed(motor_ID, value):
@@ -105,6 +110,7 @@ def on_cmd_str(msg):
 
 ### pan/tilt functions
 class CenterPanTilt():
+    ''' a PanTilt message preset to center pan/tilt '''
     pan = 90.0
     tilt = 45.0
 
@@ -112,12 +118,37 @@ def on_pantilt(msg):
     panTilt.setRotationAngle(1, max(0.0, min(180.0, msg.pan)))
     panTilt.setRotationAngle(0, max(0.0, min(90.0, msg.tilt)))
 
+# pixelring functions
+def on_pixelring(msg):
+    command = msg.data
+    if command == 'listen':
+        pixelring.listen()
+    elif command == 'speak':
+        pixelring.speak()
+    elif command == 'think':
+        pixelring.think()
+    elif command == 'spin':
+        pixelring.spin()
+    elif command == 'red':
+        pixelring.set_color(r=255)
+    elif command == 'blue':
+        pixelring.set_color(b=255)
+    elif command == 'purple':
+        pixelring.set_color(b=255, r=255)
+    elif command == 'off':
+        pixelring.off()
+    else:
+        rospy.logwarn('Unexpected pixelring command <{}>'.format(command))
+
 def main():
     # stop the motors as precaution
     all_stop()
 
     # initialize pan and tilt
     on_pantilt(CenterPanTilt)
+
+    # set pixelring to default listen
+    pixelring.listen()
 
     # setup ros node
     rospy.init_node('drivers')
@@ -130,6 +161,9 @@ def main():
     ### Pan/Tilt
     rospy.Subscriber('pantilt', PanTilt, on_pantilt)
 
+    ### pixel ring
+    rospy.Subscriber('pixelring', String, on_pixelring)
+
     # start running
     try:
         rospy.spin()
@@ -140,6 +174,8 @@ def main():
         all_stop()
         # center pan/tilt
         on_pantilt(CenterPanTilt)
+        # pixelring listen
+        pixelring.listen()
 
 if __name__ == '__main__':
     main()

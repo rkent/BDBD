@@ -13,6 +13,7 @@ import json
 import pyaudio
 import threading
 from bdbd.msg import AngledText
+from std_msgs.msg import Bool
 from audio_common_msgs.msg import AudioData
 
 RATE = 0.01
@@ -33,6 +34,15 @@ def indexFromName(pa, name):
 def main():
 
     continueThread = True
+
+    def status_cb(status):
+        if status:
+            rospy.loginfo('Collecting voice stream')
+            mikestatuspub.publish(True)
+        else:
+            rospy.loginfo('Waiting for voice')
+            mikestatuspub.publish(False)
+
     def getVoice():
         while continueThread:
             angle = -1
@@ -60,11 +70,12 @@ def main():
     rospy.loginfo('{} starting with PID {}'.format(os.path.basename(__file__), os.getpid()))
     textpub = rospy.Publisher('hearit/angled_text', AngledText, queue_size=10)
     audiopub = rospy.Publisher('audio', AudioData, queue_size=10)
+    mikestatuspub = rospy.Publisher('mike/status', Bool, queue_size=10)
 
     pa = pyaudio.PyAudio()
     device = indexFromName(pa, 'respeaker')
     mic = sr.Microphone(device_index=device)
-    r = ReRecognizer()
+    r = ReRecognizer(status_cb)
     recognizer = r.recognize_google_cloud
     google_key = ''
     with open('/home/kent/secrets/stalwart-bliss-270019-7159f52eb443.json', 'r') as f:

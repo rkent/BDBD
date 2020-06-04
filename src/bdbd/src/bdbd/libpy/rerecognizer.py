@@ -16,9 +16,16 @@ def is_speech():
         return False
 
 class ReRecognizer(Recognizer):
-    def __init__(self):
-        super(ReRecognizer, self).__init__()
+    ''' Speech recognizer, adapted from speech_recognition to support respeaker microphone array
 
+    class initializer passes an option callback function. Function returns status:
+        False: waiting for voice, none detected.
+        True: actively collecting voice data
+    '''
+    def __init__(self, status_cb=None):
+        super(ReRecognizer, self).__init__()
+        self.status_cb = status_cb
+        self.current_status = False
 
     def listen(self, source, timeout=None, phrase_time_limit=None, snowboy_configuration=None):
         """
@@ -53,6 +60,10 @@ class ReRecognizer(Recognizer):
             if snowboy_configuration is None:
                 # store audio input until the phrase starts
                 while True:
+                    if self.current_status:
+                        self.current_status = False
+                        if self.status_cb:
+                            self.status_cb(self.current_status)
                     # handle waiting too long for phrase by raising an exception
                     elapsed_time += seconds_per_buffer
                     if timeout and elapsed_time > timeout:
@@ -87,6 +98,11 @@ class ReRecognizer(Recognizer):
             phrase_start_time = elapsed_time
             angles = []
             while True:
+                if not self.current_status:
+                    self.current_status = True
+                    if self.status_cb:
+                        self.status_cb(self.current_status)
+
                 # handle phrase being too long by cutting off the audio
                 elapsed_time += seconds_per_buffer
                 if phrase_time_limit and elapsed_time - phrase_start_time > phrase_time_limit:

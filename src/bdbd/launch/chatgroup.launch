@@ -1,0 +1,8 @@
+<launch>
+    <node name='sayit' pkg='bdbd' type='sayit' ns='bdbd' output='screen'/>
+    <node name='hearit' pkg='bdbd' type='hearit' ns='bdbd' output='screen'/>
+    <node name='speechResponse' pkg='bdbd' type='speechResponse' ns='bdbd' output='screen'/>
+    <node name='chat' pkg='bdbd' type='chat' ns='bdbd' output='screen'/>
+    <node name='drivers' pkg='bdbd' type='drivers' ns='bdbd' output='screen'/>
+    
+</launch>
