@@ -1,9 +1,4 @@
 <launch>
-    <node name='detectBlocking' pkg='bdbd' type='detectBlocking' ns='bdbd' />
-    <node name='gamepad' pkg='bdbd' type='gamepad' ns='bdbd'/>
-    <node name='motors' pkg='bdbd' type='motors' ns='bdbd' />
-    <include file='$(dirname)/sr305min.launch' />
-    <include file='$(dirname)/t265min.launch' />
-    <include file='$(dirname)/transforms.launch' />
-    <!-- <node name='explore' pkg='bdbd' type='explore' ns='bdbd' /> -->
+    <param name='/bdbd/behaviors' value='explore' />
+    <node name='bdnodes' pkg='bdbd' type='bdnodes' output='screen' />
 </launch>

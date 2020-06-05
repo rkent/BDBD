@@ -9,6 +9,7 @@ except:
 from espeakng import ESpeakNG
 from bdbd.libpy.googleTTS import GoogleTTS
 
+#ENGINE = 'espeak-ng'
 ENGINE = 'google'
 
 PERIOD = 0.1 # update rate in seconds
@@ -53,7 +54,7 @@ class SayIt():
                 if ENGINE == 'google':
                     self._googleTTS.say(text)
                 else:
-                    self.engine.say(text, sync=True)
+                    self._espeak.say(text, sync=True)
                 self._talkingPub.publish(False)
                 if responseQueue:
                     responseQueue.put('done')

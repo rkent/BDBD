@@ -35,24 +35,32 @@ class NodeManagement:
     def __init__(self):
         rospy.init_node("bdnodes")
         self.launchers = {}
+        self.behaviors = []
+        start_behaviors_str = rospy.get_param('/bdbd/behaviors', '')
+        if start_behaviors_str:
+            self.behaviors.extend(start_behaviors_str.split())
+
+        for behavior in self.behaviors:
+            mainQueue.put(['behavior', behavior, 'start', None])
+
         self.launchService = rospy.Service('~launch', NodeCommand, self.handle_launch)
         self.behaviorService = rospy.Service('~behavior', NodeCommand, self.handle_behavior)
         rate = rospy.Rate(100)
         rospy.loginfo('Ready to process commands')
         while not rospy.is_shutdown():
             if not mainQueue.empty():
-                type, name, command, responseQueue = mainQueue.get()
+                req_type, name, command, responseQueue = mainQueue.get()
                 response = None
 
                 try:
-                    if type == 'launch':
+                    if req_type == 'launch':
                         response = self.process_launch(name, command)
                 
-                    elif type == 'behavior':
+                    elif req_type == 'behavior':
                         response = self.process_behavior(name, command)
 
                     else:
-                        rospy.logerr('Invalid nodeManagement type {}'.format(type))
+                        rospy.logerr('Invalid nodeManagement req_type {}'.format(req_type))
                         response = 'error'
 
                 except KeyboardInterrupt:
@@ -61,7 +69,8 @@ class NodeManagement:
                     rospy.logerr(sys.exc_info()[1])
                     response = 'error'
                 finally:
-                    responseQueue.put(response)
+                    if responseQueue:
+                        responseQueue.put(response)
 
             else:
                 rate.sleep()

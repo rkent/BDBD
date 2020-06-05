@@ -1,5 +1,5 @@
 <launch>
     <node name='gamepad' pkg='bdbd' type='gamepad' ns='bdbd'/>
-    <node name='motors' pkg='bdbd' type='motors' ns='bdbd' />
+    <node name='drivers' pkg='bdbd' type='drivers' ns='bdbd' />
     <node name='domotors' pkg='bdbd' type='domotors' ns='bdbd' />
 </launch>
