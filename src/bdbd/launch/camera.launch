@@ -1,0 +1,3 @@
+<launch>
+    <node name='camera' pkg='jetbot_ros' type='jetbot_camera' ns='bdbd' output='screen' />
+</launch>

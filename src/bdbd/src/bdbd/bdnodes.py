@@ -13,34 +13,49 @@
 import rospy
 import roslaunch
 import time
+import traceback
 from bdbd.srv import NodeCommand, NodeCommandResponse
 from Queue import Queue
 import sys
 
 Behaviors = {
     'explore': [
-        't265min',
-        'speech',
-        'gamepad',
         'drivers',
+        't265min',
+        'sayit',
+        'hearit',
+        'speechResponse',
+        'gamepad',
         'transforms',
         'sr305min',
         'detectBlocking',
         'explore',
-    ]
+    ],
+    'chat': [
+        'drivers',
+        'sayit',
+        'hearit',
+        'speechResponse',
+        'chat',
+    ],
+    'voice': [
+        'drivers',
+        'sayit',
+        'hearit',
+        'speechResponse',
+    ],
 }
 
 mainQueue = Queue()
 class NodeManagement:
     def __init__(self):
         rospy.init_node("bdnodes")
-        self.launchers = {}
-        self.behaviors = []
+        self.launchers = {} # the launcher objects used to start/stop nodes
+        self.behaviors = set() # the requested behaviors
+        self.launches = set() # the requested launches
         start_behaviors_str = rospy.get_param('/bdbd/behaviors', '')
-        if start_behaviors_str:
-            self.behaviors.extend(start_behaviors_str.split())
 
-        for behavior in self.behaviors:
+        for behavior in start_behaviors_str.split():
             mainQueue.put(['behavior', behavior, 'start', None])
 
         self.launchService = rospy.Service('~launch', NodeCommand, self.handle_launch)
@@ -77,11 +92,18 @@ class NodeManagement:
 
     def handle_launch(self, req):
         rospy.loginfo('Got launch request: {} {}'.format(req.name, req.command))
+
         # handle the delay here so that we don't slow down the main thread
         if req.command.startswith('start') and len(req.command) > 5:
             delay = float(req.command[5:])
             time.sleep(delay)
             req.command = 'start'
+        
+        if req.command.startswith('start'):
+            self.launches.add(name)
+        elif req.command == 'stop' or req.command == 'shutdown':
+            self.launces.discard(name)
+
         responseQueue = Queue()
         mainQueue.put(['launch', req.name, req.command, responseQueue])
         response = responseQueue.get()
@@ -96,21 +118,33 @@ class NodeManagement:
         rospy.loginfo('Behavior command response: [{}] to [{} {}]'.format(response, req.name, req.command))
         return(response)
 
-    def process_behavior(self, name, command):
+    def process_behavior(self, behavior, command):
         try:
-            responses = set()
-            names = Behaviors[name]
-            for name in names:
-                response = self.process_launch(name, command)
-                if response != 'started':
-                    rospy.loginfo('response {} to {}'.format(response, name))
-                responses.add(response)
-            if 'error' in responses:
-                return('error')
+            if command == 'start':
+                if behavior in self.behaviors:
+                    return('active')
+                self.behaviors.add(behavior)
+                ret_response = 'started'
+                launches = Behaviors[behavior]
+                for launch in launches:
+                    response = self.process_launch(launch, 'start')
+                    if response == 'error':
+                        rospy.logwarn('response {} to {}'.format(response, name))
+                        ret_response = 'error'
+                return ret_response
+
+            elif command == 'stop':
+                if behavior not in self.behaviors:
+                    return 'inactive'
+                self.behaviors.remove(behavior)
+                self.process_stops()
+                return 'stopped'
             else:
-                return('started')
-        except AttributeError:
-            rospy.logerr('Behavior {} not found'.format(name))
+                rospy.logwarn('Invalid behavior command {}'.format(command))
+                return 'error'
+
+        except:
+            rospy.logerr(traceback.format_exc())
             return('error')
 
     def process_launch(self, name, command):
@@ -119,9 +153,6 @@ class NodeManagement:
                 response = 'active'
             else:
                 try:
-                    if len(command) > 5:
-                        delay = float(command[5:])
-                        time.sleep(delay)
                     uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
                     roslaunch.configure_logging(uuid)
                     self.launchers[name] = roslaunch.parent.ROSLaunchParent(uuid, ['/home/kent/github/rkent/bdbd/src/bdbd/launch/' + name + '.launch'])
@@ -133,12 +164,7 @@ class NodeManagement:
                     self.launchers.pop(name)
 
         elif command == 'shutdown' or command == 'stop':
-            if name in self.launchers:
-                self.launchers[name].shutdown()
-                self.launchers.pop(name)
-                response = 'shutdown'
-            else:
-                response = 'inactive'
+            self.process_stops()
 
         elif command == 'status':
             if name in self.launchers:
@@ -149,7 +175,27 @@ class NodeManagement:
         else:
             response = 'invalid'
 
+        rospy.loginfo('launcher command {} for {} result {}'.format(command, name, response))
         return response
+
+    def process_stops(self):
+        ''' combines all active launches and behaviors, and stops and unneeded active launches '''
+        needed_launches = set()
+        for behavior in self.behaviors:
+            print('behavior {}'.format(behavior))
+            for launch in Behaviors[behavior]:
+                print('launch {}'.format(launch))
+                needed_launches.add(launch)
+        for launch in self.launches:
+            needed_launches.add(launch)
+
+        # stop any unneeded launchers
+        for launch in self.launchers.copy():
+            print('checking launcher {}'.format(launch))
+            if launch not in needed_launches:
+                rospy.loginfo('stopping {}'.format(launch))
+                self.launchers[launch].shutdown()
+                self.launchers.pop(launch)
 
 def main():
     NodeManagement()

@@ -1,4 +1,0 @@
-<launch>
-    <param name='/bdbd/camera1/device' value='1' type='str' />
-    <node name='camera1' pkg='jetbot_ros' type='jetbot_camera' ns='bdbd' output='screen' />
-</launch>
