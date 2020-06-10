@@ -10,7 +10,9 @@ rospy.sleep(1.0)
 
 transforms = tl.getFrameStrings()
 
-base_frame = 't265_pose_frame'
+base_frame = 'base_link'
+new_frame = 'pantilt_camera'
+'''
 for ts in transforms:
     if ts == base_frame:
         continue
@@ -19,10 +21,11 @@ for ts in transforms:
         print(tl.lookupTransform(base_frame, ts, rospy.Time(0)))
     except:
         print('error')
+'''
 
 p1 = geometry_msgs.msg.PoseStamped()
 p1.header.frame_id = "base_link"
 p1.pose.orientation.w = 1.0    # Neutral orientation
-p_in_base = tl.transformPose("/floor", p1)
-print("Position of the floor in the robot base:", p_in_base)
+p_in_new = tl.transformPose(new_frame, p1)
+print("transform\n{}\n from {} to {} is\n{}".format(p1.pose, base_frame, new_frame, p_in_new.pose))
 

@@ -166,13 +166,13 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
             directions = []
             for objective in objectives:
                 directions.append(objective.direction) 
-            rospy.loginfo('objectives.direction: {} blocking: {}'.format(direction, blocking))
+            rospy.logdebug('objectives.direction: {} blocking: {}'.format(direction, blocking))
         target_pose = objectives and objectives[0].poseTarget or None
         # rospy.loginfo('current_pose: {}'.format(current_pose))
         current_pose = tfl.transformPose('map', current_pose)
         last_pose = tfl.transformPose('map', last_pose)
         if target_pose is not None:
-            # rospy.loginfo('target_pose: {}'.format(target_pose))
+            # rospy.logdebug('target_pose: {}'.format(target_pose))
             target_pose = tfl.transformPose('map', target_pose)
 
         if direction == Direction.STOPPED:
@@ -200,7 +200,7 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
             # reverse until we are moving away from target pose
             current_distance = poseDistance(current_pose, target_pose)
             last_distance = poseDistance(last_pose, target_pose)
-            rospy.loginfo('distance: {}'.format(current_distance))
+            rospy.logdebug('distance: {}'.format(current_distance))
             if current_distance < last_distance:
                 # we are getting closer, keep reversing
                 new_state = Moving.REVERSE
@@ -256,7 +256,7 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
         elif direction == Direction.ROTATE_LEFT:
             theta = poseTheta(current_pose, target_pose)
             delta_theta = poseTheta(current_pose, last_pose)
-            rospy.loginfo('theta: {} dtheta: {}'.format(theta, delta_theta))
+            rospy.logdebug('theta: {} dtheta: {}'.format(theta, delta_theta))
             if theta < 0.0 or delta_theta > 0.0:
                 objectives.pop(0)
             else:
@@ -265,7 +265,7 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
         elif direction == Direction.ROTATE_RIGHT:
             theta = poseTheta(current_pose, target_pose)
             delta_theta = poseTheta(current_pose, last_pose)
-            rospy.loginfo('theta: {} dtheta: {}'.format(theta, delta_theta))
+            rospy.logdebug('theta: {} dtheta: {}'.format(theta, delta_theta))
             if theta > 0.0 or delta_theta < 0.0:
                 objectives.pop(0)
             else:
@@ -274,7 +274,7 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
         else:
             raise RuntimeError('unknown direction {}'.format(direction))
     if new_state != Moving.STOPPED:
-        rospy.loginfo('new_state: {}'.format(new_state))
+        rospy.logdebug('new_state: {}'.format(new_state))
     return new_state
 
 def do_movement(moving_state):
@@ -359,13 +359,13 @@ def main():
                         #rospy.loginfo('Give change time')
                         continue
                     if last_pose is None:
-                        rospy.loginfo('No last_pose')
+                        rospy.logdebug('No last_pose')
                         continue
                     new_state = getNewMovement(objectives, blocking, current_pose, last_pose, tfl)
 
                 newleft, newright = do_movement(new_state)
                 if newleft != left or newright != right:
-                    rospy.loginfo('left is {:6.2f} right is {:6.2f}'.format(newleft, newright))
+                    rospy.logdebug('left is {:6.2f} right is {:6.2f}'.format(newleft, newright))
                     rospy.loginfo('blocking: {}'.format(blocking))
                     lastChange = time.time()
                     motor_pub.publish(newleft, newright)

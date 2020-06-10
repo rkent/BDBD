@@ -63,6 +63,10 @@ def main():
                         behavior = 'explore'
                     elif words[2] == 'chat':
                         behavior = 'chat'
+                    elif words[2].startswith('object'):
+                        behavior = 'objects'
+                    elif words[2].startswith('chase'):
+                        behavior = 'chase'
 
                     if words[3] == 'start':
                         command = 'start'

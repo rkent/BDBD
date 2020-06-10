@@ -1,0 +1,7 @@
+<launch>
+    <node name='camera' pkg='jetbot_ros' type='jetbot_camera' ns='bdbd' output='screen' />
+    <node name='reportObjects' pkg='bdbd' type='reportObjects' ns='bdbd' output='screen' />
+    <node name='sayit' pkg='bdbd' type='sayit' ns='bdbd' output='screen' />
+    <remap from='/detectnet/image_in' to='/bdbd/camera/raw' />
+    <node name='detectnet' pkg='ros_deep_learning' type='detectnet' output='log' />
+</launch>

@@ -38,11 +38,25 @@ Behaviors = {
         'speechResponse',
         'chat',
     ],
+    'chase': [
+        'camera',
+        'detectnet',
+        'drivers',
+        'sayit',
+        'peoplechase',
+    ],
     'voice': [
         'drivers',
         'sayit',
         'hearit',
         'speechResponse',
+    ],
+    'objects': [
+        'sayit',
+        #'sr305min',
+        'detectnet',
+        'reportObjects',
+        'camera',
     ],
 }
 

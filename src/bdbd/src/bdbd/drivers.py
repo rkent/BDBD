@@ -15,6 +15,12 @@ from bdbd.msg import MotorsRaw
 from bdbd.msg import PanTilt
 from libpantilt.PCA9685 import PCA9685
 from bdbd.libpy.respeaker.usb_pixel_ring_v2 import find
+import tf
+
+pan = 90.0
+tilt = 45.0
+
+D_TO_R = 3.1415926535 / 180. # degrees to radians
 
 def main():
 
@@ -106,11 +112,30 @@ def main():
         tilt = 45.0
 
     def on_pantilt(msg):
+        global pan
+        pan = msg.pan
+        global tilt
+        tilt = msg.tilt
+        rospy.loginfo('PanTilt msg {} {}'.format(msg.pan, msg.tilt))
         try:
             panTilt.setRotationAngle(1, max(0.0, min(180.0, msg.pan)))
             panTilt.setRotationAngle(0, max(0.0, min(90.0, msg.tilt)))
+            pantilt_tf_cb(None)
+
         except:
-            rospy.logerr(traceback.format_exc)
+            rospy.logerr(traceback.format_exc())
+
+    def pantilt_tf_cb(timerEvent):
+        global pan
+        global tilt
+
+        # calculate rotations for transform
+        # 1) pan
+        qpan_rot = tf.transformations.quaternion_from_euler(0., 0., (pan - 90.) * D_TO_R)
+        tf_br.sendTransform((0, 0, 0), qpan_rot, rospy.Time.now(), 'pantilt_pan', 'pantilt_base')
+        # 2) tilt
+        qtilt_rot = tf.transformations.quaternion_from_euler(0., (tilt - 45.) * D_TO_R, 0.0)
+        tf_br.sendTransform((0, 0, 0), qtilt_rot, rospy.Time.now(), 'pantilt_tilt', 'pantilt_axis')
 
     # pixelring functions
     def on_pixelring(msg):
@@ -161,6 +186,7 @@ def main():
         panTilt.setPWMFreq(50)
         # initialize pan and tilt
         on_pantilt(CenterPanTilt)
+        tf_br = tf.TransformBroadcaster()
     except:
         rospy.logerr(traceback.format_exc)
 
@@ -182,6 +208,7 @@ def main():
 
     ### Pan/Tilt
     rospy.Subscriber('pantilt', PanTilt, on_pantilt)
+    rospy.Timer(rospy.Duration(0.1), pantilt_tf_cb)
 
     ### pixel ring
     rospy.Subscriber('pixelring', String, on_pixelring)

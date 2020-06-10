@@ -1,0 +1,3 @@
+<launch>
+    <node name='peoplechase' pkg='bdbd' type='peoplechase' ns='bdbd' output='screen' />
+</launch>

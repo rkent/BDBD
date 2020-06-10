@@ -211,6 +211,8 @@ catkin_install_python(PROGRAMS
   nodes/motors
   nodes/mtnn_faces
   nodes/pantilt
+  nodes/peoplechase
+  nodes/reportObjects
   nodes/sayit
   nodes/speechResponse
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

@@ -1,0 +1,7 @@
+<launch>
+    <remap from='/bdbd/reportObjects/image_in' to='/bdbd/camera/raw' />
+    <!--
+    <remap from='/bdbd/reportObjects/image_in' to='/sr305/color/image_raw' />
+    -->
+    <node name='reportObjects' pkg='bdbd' type='reportObjects' ns='bdbd' output='screen' />
+</launch>

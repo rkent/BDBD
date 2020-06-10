@@ -17,7 +17,7 @@
       <arg name="infra_height"      value="480"/>
       <arg name="infra_fps"         value="10"/>
       <arg name="enable_depth"      value="true"/>
-      <arg name="enable_color"      value="false"/>
+      <arg name="enable_color"      value="true"/>
       <arg name="enable_fisheye"    value="false"/>
       <arg name="enable_gyro"       value="false"/>
       <arg name="enable_accel"      value="false"/>

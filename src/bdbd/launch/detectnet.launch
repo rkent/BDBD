@@ -1,0 +1,11 @@
+<launch>
+    <remap from='/detectnet/image_in' to='/bdbd/camera/raw' />
+    <param name='/detectnet/threshold' value='0.2' />
+    <param name='/detectnet/model_name' value='ssd-inception-v2' />
+    <!--
+    <param name='/detectnet/model_name' value='facenet' />
+    <param name='/detectnet/model_name' value='pednet' />
+    <remap from='/detectnet/image_in' to='/sr305/color/image_raw' />
+    -->
+    <node name='detectnet' pkg='ros_deep_learning' type='detectnet' output='log' />
+</launch>
