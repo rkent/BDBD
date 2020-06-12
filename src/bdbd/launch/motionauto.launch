@@ -1,7 +1,7 @@
 <launch>
     <node name='detectBlocking' pkg='bdbd' type='detectBlocking' ns='bdbd' />
     <node name='gamepad' pkg='bdbd' type='gamepad' ns='bdbd'/>
-    <node name='motors' pkg='bdbd' type='motors' ns='bdbd' />
+    <node name='drivers' pkg='bdbd' type='drivers' ns='bdbd' />
     <!-- <include file='$(dirname)/sr305.launch' /> -->
 
     <!-- <include file='$(dirname)/t265min.launch' /> -->

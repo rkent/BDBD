@@ -11,7 +11,7 @@ def publishEvents():
     while not rospy.is_shutdown():
         result = pad.getEvent()
         if result:
-            rospy.loginfo(str(result))
+            # rospy.loginfo(str(result))
             pub.publish(result[0], result[1])
         else:
             rate.sleep()

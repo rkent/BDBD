@@ -1,3 +1,4 @@
 <launch>
-    <node name='peoplechase' pkg='bdbd' type='peoplechase' ns='bdbd' output='screen' />
+    <machine name='xxx' address='ubutower.dryrain.org' env-loader='/home/kent/github/rkent/bdbd/sys/env.sh' user='kent'/>
+    <node machine='xxx' name='peoplechase' pkg='bdbd' type='peoplechase' ns='bdbd' output='screen' />
 </launch>

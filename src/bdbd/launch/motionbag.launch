@@ -1,0 +1,7 @@
+<launch>
+    <node name='gamepad' pkg='bdbd' type='gamepad' ns='bdbd'/>
+    <node name='drivers' pkg='bdbd' type='drivers' ns='bdbd' />
+    <node name='domotors' pkg='bdbd' type='domotors' ns='bdbd' />
+    <include file='$(dirname)/t265min.launch' />
+    <include file='$(dirname)/transforms.launch' />
+</launch>

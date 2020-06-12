@@ -8,7 +8,7 @@ try:
 except:
     from queue import Queue
 
-PERIOD = 0.01 # How frequently to call, in seconds
+PERIOD = 0.1 # How frequently to call, in seconds
 
 class Do_Motors():
     def __init__(self):
@@ -27,30 +27,33 @@ class Do_Motors():
 
     def run(self):
         while not rospy.is_shutdown():
+            have_msg = False
             while not self.event_queue.empty():
                 msg = self.event_queue.get()
-                rospy.loginfo('domotors message:' + str(msg))
+                # rospy.loginfo('domotors message:' + str(msg))
                 if msg.name == 'BTN_START' and msg.value == 1:
                     self.active = True
                     rospy.loginfo('Starting')
-                    self.update_motors()
+                    have_msg = True
 
                 elif msg.name == 'BTN_SELECT' and msg.value == 1:
                     self.active = False
                     rospy.loginfo('Stopping')
-                    self.update_motors()
+                    have_msg = True
 
                 elif msg.name == 'ABS_Z':
                     self.Z = msg.value
-                    self.update_motors()
+                    have_msg = True
 
                 elif msg.name == 'ABS_RZ':
                     self.RZ = msg.value
-                    self.update_motors()
+                    have_msg = True
 
                 else:
                     continue # ignore any other type of gamepad message
 
+            if have_msg:
+                self.update_motors()
             rospy.sleep(PERIOD)
 
     def update_motors(self):
@@ -64,7 +67,7 @@ class Do_Motors():
             rospy.loginfo('(x, y) is ({:6.3f}, {:6.3f})'.format(x, y))
             theta = math.atan2(y, x)
             gamma = theta - math.pi / 4.
-            rospy.loginfo('theta: {:6.3f} gamma: {:6.3f} norm: {:6.3f}'.format(theta, gamma, norm))
+            # rospy.loginfo('theta: {:6.3f} gamma: {:6.3f} norm: {:6.3f}'.format(theta, gamma, norm))
 
             self.left = max(-1.0, min(1.0, math.sqrt(2.0) * norm * math.cos(gamma)))
             self.right = max(-1.0, min(1.0, math.sqrt(2.0) * norm * math.sin(gamma)))

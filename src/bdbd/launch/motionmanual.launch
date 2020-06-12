@@ -1,5 +1,7 @@
 <launch>
-    <node name='gamepad' pkg='bdbd' type='gamepad' ns='bdbd'/>
-    <node name='drivers' pkg='bdbd' type='drivers' ns='bdbd' />
-    <node name='domotors' pkg='bdbd' type='domotors' ns='bdbd' />
+    <node name='gamepad' pkg='bdbd' type='gamepad' ns='bdbd' output='screen' />
+    <node name='drivers' pkg='bdbd' type='drivers' ns='bdbd' output='screen'  />
+    <node name='domotors' pkg='bdbd' type='domotors' ns='bdbd' output='screen'  />
+    <include file='$(dirname)/t265min.launch' />
+
 </launch>
