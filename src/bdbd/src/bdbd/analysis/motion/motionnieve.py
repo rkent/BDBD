@@ -30,9 +30,10 @@ model = keras.models.Sequential([
 print(model.summary())
 
 model.compile(loss='mean_squared_error', optimizer='Adam')
-history = model.fit(InsSeq, OutsSeq, epochs=20, validation_split=0.5)
-
-model.save('data/modelnieve')
+input('?')
+history = model.fit(InsSeq, OutsSeq, epochs=100, validation_split=0.5)
+exit()
+#model.save('data/modelnieve')
 
 # predictions
 
