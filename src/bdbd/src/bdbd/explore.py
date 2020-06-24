@@ -62,6 +62,7 @@ class Direction(Enum):
     ROTATE_LEFT_CLEAR = 7 # rotate until clear
     ROTATE_RIGHT_CLEAR = 8
     ROTATE = 9 # choose best direction of rotation
+    TARGET = 10 # move to the target pose
 
 # classes
 class Objective():
@@ -311,6 +312,7 @@ def main():
     blocking_sub = rospy.Subscriber('/bdbd/detectBlocking/roadBlocking', RoadBlocking, msg_cb)
     gamepad_sub = rospy.Subscriber('/bdbd/gamepad/events', GamepadEvent, msg_cb)
     action_sub = rospy.Subscriber('speechResponse/action', SpeechAction, msg_cb)
+    objective_sub = rospy.Subscriber('/bdbd/explore/poseTarget', PoseStamped, msg_cb)
     motor_pub = rospy.Publisher('/bdbd/motors/cmd_raw', MotorsRaw, queue_size=10)
     sayit_pub = rospy.Publisher('/bdbd/sayit/text', String, queue_size=10)
     objectives = []
@@ -389,6 +391,17 @@ def main():
                     sayit_pub.publish('OK, stop exploring')
                     objectives = []
     
+            elif msg_type == 'geometry_msgs/PoseStamped':
+                # this is an an objective addition, to move to a target pose. It overrides a final EXPLORE objective,
+                # or another target pose, at the end of the objective queue.
+                while len(objectives):
+                    final_objective = objectives[-1]
+                    if final_objective.direction in (Direction.EXPLORE, Direction.TARGET, Direction.FORWARD,):
+                        final_objective.pop(-1)
+                    else:
+                        break
+                objectives.append(Objective(Direction.TARGET, msg))
+
             else:
                 rospy.logwarn("Unexpected message type {}".format(msg_type))
 
