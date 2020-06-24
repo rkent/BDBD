@@ -7,6 +7,7 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 from scipy.integrate import cumtrapz
 import math
+import time
 import matplotlib.pyplot as plt
 
 class LR():
@@ -17,8 +18,8 @@ class LR():
         vmax: (float): a max value of velocity, used for value clipping
     '''
     def __init__(self, left_edges, right_edges, taus, vmax, bc_type='natural', rho=0.5, lin_factor=0.85):
-        assert len(left_edges) == len(right_edges), 'len(lefts) = {} len(rights) = {}'.format(len(lefts), len(rights))
-        assert len(taus) == len(left_edges) - 1, 'len(taus) = {}, len(lefts) = {}'.format(len(taus), len(lefts))
+        assert len(left_edges) == len(right_edges), 'len(lefts) = {} len(rights) = {}'.format(len(left_edges), len(right_edges))
+        assert len(taus) == len(left_edges) - 1, 'len(taus) = {}, len(lefts) = {}'.format(len(taus), len(left_edges))
         self.cs_left = None # cubic spline function to generate lefts
         self.cs_right = None # cubic spline function to generate rights
         self.vmax = vmax
@@ -127,8 +128,8 @@ def integrate_rates(predictions, deltat):
         result.thetas = cumtrapz(result.thetadots, tees, initial=0.0)
         sinthetas = np.sin(result.thetas)
         costhetas = np.cos(result.thetas)
-        map_vxs = result.vxs * costhetas - result.vys * costhetas
-        map_vys = result.vxs * sinthetas + result.vys * sinthetas
+        map_vxs = result.vxs * costhetas - result.vys * sinthetas
+        map_vys = result.vxs * sinthetas + result.vys * costhetas
         result.xs = cumtrapz(map_vxs, tees, initial=0.0)
         result.ys = cumtrapz(map_vys, tees, initial=0.0)
         results.append(result)
@@ -156,20 +157,20 @@ def calc_losses(result, tees, lastt, targets):
 
     # Now we will calculate the loss metrics
     lf = [
-        1000,  # 1) the square of the final distance error
-        200,  # 2) the square of the final theta error, in radians squared
-        200,  # the square of the final x velocity error
+        200,  # 1) the square of the final distance error
+        800,  # 2) the square of the final theta error, in radians squared
+        10,  # the square of the final x velocity error
         0,  # 4) backing penalty
         10,   # 5) the square of the final angular velocity error
-        0.00, # 6) the total time
-        200.0  # 7) total jerk
+        0, # 6) the total time
+        10  # 7) total jerk
     ]
     '''
     lf = [
         10,  # 1) the square of the final distance error
         200,  # 2) the square of the final theta error, in radians squared
         20,  # the square of the final x velocity error
-        0,  # 4) backing penalty
+        10,  # 4) backing penalty
         10,   # 5) the square of the final angular velocity error
         0.00, # 6) the total time
         200.0  # 7) total jerk
@@ -305,6 +306,101 @@ def update_vars(vars, dldvs, alpha):
             new_value = max(.1, new_value)
         new_vars.append(new_value)
     return new_vars
+
+def initial_guess(x, y, theta):
+    # calculate an initial guess for the speed variables
+    left_edges = [0.0]
+    right_edges = [0.0]
+    taus = []
+
+    # determine theta to x, y
+    theta_xy = math.atan2(y, x)
+
+    if abs(theta_xy) > .25:
+        left_speed = -1.0 if theta_xy > 0. else 1.0
+        left_edges += [left_speed, 0.0]
+        right_edges += [-left_speed, 0.0]
+        tau_value = max(.05, .408 * abs(theta_xy) / .944)
+        taus += [tau_value, tau_value]
+    else:
+        theta_xy = 0.0
+
+    # move to x, y
+    distance = math.sqrt(x**2 + y**2)
+    tau_value = max(0.05, 1.18 * distance / .494)
+    left_edges += [1.0, 0.0]
+    right_edges += [1.0, 0.0]
+    taus += [tau_value, tau_value]
+
+    # final theta
+    final_theta = theta - theta_xy
+    left_speed = -1.0 if final_theta > 0. else 1.0
+    left_edges += [left_speed, 0.0]
+    right_edges += [-left_speed, 0.0]
+    tau_value = max(0.05, .408 * abs(final_theta) / .944)
+    taus += [tau_value, tau_value]
+
+    return (left_edges, right_edges, taus)
+
+    # rotate to theta
+
+def iterate(model, targets, left_edges, right_edges, taus, tolerance=2.0, niters=50, deltat=0.025, alpha=0.0001, plot=True, title='iterate'):
+        
+    old_losses = None
+    old_vars = None
+    old_dldvs = None
+    for count in range(niters):
+        print('\ncount= {}'.format(count))
+
+        lr = LR(left_edges, right_edges, taus, 1.0, bc_type='natural')
+
+        # plot
+        if plot:
+            plot_speeds(lr, left_edges, right_edges, taus, deltat=0.025, title=title)
+
+        losses, dldvs = get_dldv(model, left_edges, right_edges, taus, targets, deltat=deltat)
+        print_list(dldvs, 'dldvs')
+        vars = left_edges + right_edges + taus
+        if old_vars and losses > old_losses:
+            if alpha < .000001:
+                break
+            alpha /= 2.
+            new_vars = update_vars(old_vars, old_dldvs, alpha=alpha)
+        else:
+            alpha *= 1.1
+            new_vars = update_vars(vars, dldvs, alpha=alpha)
+            old_vars = list(vars)
+            old_dldvs = list(dldvs)
+            old_losses = losses
+        print_list(vars,     'vars    ')
+        print_list(new_vars, 'new_vars')
+        print('losses: {} old_losses: {} alpha: {}'.format(losses, old_losses, alpha))
+        if losses < tolerance and count > 1:
+            break
+        left_edges = new_vars[:len(left_edges)]
+        right_edges = new_vars[len(left_edges):2*len(left_edges)]
+        taus = new_vars[2*len(left_edges):]
+    return left_edges, right_edges, taus
+
+def plot_speeds(lr, left_edges, right_edges, taus, deltat=0.025, title='lefts/rights'):
+    try:
+        fig = plot_speeds.fig
+    except AttributeError:
+        fig = plt.figure(figsize=(6,4))
+        plot_speeds.fig = fig
+    
+    tees = make_tees(taus, deltat)
+    lefts = list(map(lr.f_left, tees))
+    rights = list(map(lr.f_right, tees))
+    fig.clf()
+    fig.canvas.set_window_title(title)
+    plt.suptitle = title
+    plt.plot(tees, lefts)
+    plt.plot(tees, rights)
+    plt.pause(.02)
+
+
+
 
 def main_test():
 
@@ -483,14 +579,70 @@ def main_test():
         varses = vary_vars(left_edges, right_edges, taus)
         print(varses)
 
-    def test_get_dldv():
-        left_edges = [0.0, -1.0, 0.0, 1.0, 0.0]
-        right_edges = [0.0, 1.0, 0.0, 1.0, 0.0]
-        taus = [.2, .2, .2, .2]
+    def test_initialTheta():
+        left_edges = [0.0, -1.0, 0.0]
+        right_edges = [0.0, 1.0, 0.0]
+        taus = [.2, .2]
         class targets():
-            x = 0.4
-            y = 0.4
+            x = 0.0
+            y = 0.0
             theta = 1.0
+            vx = 0.0
+            vy = 0.0
+            thetadot = 0.0
+        model = keras.models.load_model('data/modelRnnFortieth15a')
+        old_losses = None
+        old_vars = None
+        old_dldvs = None
+        alpha = 0.00002
+        fig = plt.figure(figsize=(6,4))
+        for count in range(200):
+            print('\ncount= {}'.format(count))
+
+            # plot
+            lr = LR(left_edges, right_edges, taus, 1.0, bc_type='clamped')
+            tees = make_tees(taus, 0.025)
+            lefts = list(map(lr.f_left, tees))
+            rights = list(map(lr.f_right, tees))
+            fig.clf()
+            plt.plot(tees, lefts)
+            plt.plot(tees, rights)
+            plt.pause(.02)
+
+            losses, dldvs = get_dldv(model, left_edges, right_edges, taus, targets, deltat=0.025)
+            print_list(dldvs, 'dldvs')
+            vars = left_edges + right_edges + taus
+            if old_vars and losses > old_losses:
+                if alpha < .000001:
+                    break
+                alpha /= 2.
+                new_vars = update_vars(old_vars, old_dldvs, alpha=alpha)
+            else:
+                alpha *= 1.1
+                new_vars = update_vars(vars, dldvs, alpha=alpha)
+                old_vars = list(vars)
+                old_dldvs = list(dldvs)
+                old_losses = losses
+            print_list(vars,     'vars    ')
+            print_list(new_vars, 'new_vars')
+            print('losses: {} old_losses: {} alpha: {}'.format(losses, old_losses, alpha))
+            if losses < 2.0 and count > 10:
+                break
+            #left_edges = new_vars[:len(left_edges)]
+            #right_edges = new_vars[len(left_edges):2*len(left_edges)]
+            taus = new_vars[2*len(left_edges):]
+            tauValues = sum(taus)/2
+            taus = [ tauValues, tauValues]
+            # result: theta = .944 for tau_values = .408
+
+    def test_initialX():
+        left_edges = [0.0,  1.0, 0.0]
+        right_edges = [0.0, 1.0, 0.0]
+        taus = [.2, .2]
+        class targets():
+            x = .5
+            y = 0.0
+            theta = 0.0
             vx = 0.0
             vy = 0.0
             thetadot = 0.0
@@ -532,13 +684,181 @@ def main_test():
             print('losses: {} old_losses: {} alpha: {}'.format(losses, old_losses, alpha))
             if losses < 2.0 and count > 10:
                 break
-            left_edges = new_vars[:len(left_edges)]
-            right_edges = new_vars[len(left_edges):2*len(left_edges)]
+            #left_edges = new_vars[:len(left_edges)]
+            #right_edges = new_vars[len(left_edges):2*len(left_edges)]
             taus = new_vars[2*len(left_edges):]
+            tauValues = sum(taus)/2
+            taus = [ tauValues, tauValues]
+            # result: x = .494 for tau_values = 1.18
+
+    def test_const_speeds():
+        model = keras.models.load_model('data/modelRnnFortieth15a')
+        tmax = 4.0
+
+        tees = make_tees([0.0, tmax], deltat=0.025)
+        f_inputses = []
+        speedses = []
+        ins_and_outs = []
+
+        left = 1.0
+        right = -1.0
+        for i in range(21):
+            speedses.append((left, right,))
+            f_inputses.append([lambda l,v=left: v, lambda r, v=right: v])
+            right += .1
+
+        left = 0.9
+        right = 1.0
+        for i in range(20):
+            speedses.append((left, right,))
+            f_inputses.append([lambda l,v=left: v, lambda r, v=right: v])
+            left -= .1
+
+        predictions = predict(model, f_inputses, tmax, deltat=0.025)
+        results = integrate_rates(predictions, deltat=0.025)
+        for i in range(len(speedses)):
+            ins_and_outs.append((speedses[i], results[i],))
+
+        for i in range(len(ins_and_outs)):
+            print('left: {:5.2}'.format(ins_and_outs[i][0][0]),
+                  'right: {:5.2}'.format(ins_and_outs[i][0][1]),
+                  ins_and_outs[i][1])
+
+    def test_pd_control():
+        model = keras.models.load_model('data/modelRnnFortieth15a')
+        for time_test in range(5):
+            start = time.time()
+            vmax = 1.0
+            target_x = .5
+            target_y = .5
+            x = 0.0
+            y = 0.0
+            theta_gain = 1.5
+            distance_gain = 5.
+            backing_limit = .06
+            distance_tolerance = .015
+            tmax = .30
+            deltat = 0.025
+            # tees = make_tees([0.0, tmax], deltat=0.025)
+            n = int(tmax / deltat) # number of time steps in simulation
+            m = 4 # time steps between adjustments of speeds
+            np_speedses = np.zeros((1, n, 2,))
+            theta = 0.0
+
+            for count in range(1000):
+                t = count * deltat * m
+                # determine theta to x, y
+                theta_xy = math.atan2((target_y - y), (target_x - x)) - theta
+                distance = math.sqrt((x - target_x)**2 + (y - target_y)**2)
+                if distance < distance_tolerance:
+                    break
+
+                # if distance is short, allow backing. If not, spin to proper orientation
+                if distance < backing_limit:
+                    right_speed = min(vmax, max(-vmax, distance_gain * distance * (math.cos(theta_xy) + math.sin(theta_xy))))
+                    left_speed = min(vmax, max(-vmax, distance_gain * distance * (math.cos(theta_xy) - math.sin(theta_xy))))
+                else:
+                    mx = min(vmax, distance_gain * distance)
+                    if theta_xy > 0.0:
+                        right_speed = mx
+                        left_speed = max(-mx, mx - theta_gain*theta_xy)
+                    else:
+                        left_speed = mx
+                        right_speed = max(-mx, mx + theta_gain*theta_xy)
+
+                # rotate speeds list
+                np_speedses[0, :-m, :] = np_speedses[0, m:, :]
+                np_speedses[0, -m:, :] = (left_speed, right_speed,)
+                #print(np_speedses)
+
+                predictions = model.predict(np_speedses)
+                for i in range(m):
+                    vx = predictions[0, -m+i, 0]
+                    vy = predictions[0, -m+i, 1]
+                    thetadot = predictions[0, -m+i, 2]
+                    theta += thetadot * deltat
+                    costheta = math.cos(theta)
+                    sintheta = math.sin(theta)
+                    x += (vx * costheta - vy * sintheta) * deltat
+                    y += (vx * sintheta + vy * costheta) * deltat
+
+            print('t: {:6.3f} x: {:6.3f} y: {:6.3f} distance: {:6.3f} theta: {:6.3f} theta_xy: {:6.3f} left: {:6.3f} right: {:6.3f} vx: {:6.3f} vy: {:6.3f} tdot: {:6.3f}'.format(
+                t, x, y, distance, theta, theta_xy, left_speed, right_speed, vx, vy, thetadot))
+            print('elapsed_time:{:6.3f} count: {}'.format((time.time() - start), count))
+
+
+    def test_get_dldv():
+
+        class targets():
+            x = .4
+            y = 0.0
+            theta = 0.0
+            vx = 0.0
+            vy = 0.0
+            thetadot = 0.0
+
+        left_edges, right_edges, taus = initial_guess(targets.x, targets.y, targets.theta)
+        print(left_edges, right_edges, taus)
+        model = keras.models.load_model('data/modelRnnFortieth15a')
+        iterate(model, targets, left_edges, right_edges, taus,
+            tolerance=2.0, niters=50, deltat=0.025, alpha=0.0001)
+
+    def test_startup():
+        final_x = -1.0
+        final_y = 0.0
+        final_theta = 0.0
+        model = keras.models.load_model('data/modelRnnFortieth15a')
+        plot = True
+
+        class Targets():
+            def __init__(self):
+                self.x = 0.0
+                self.y = 0.0
+                self.theta = 0.0
+                self.vx = 0.0
+                self.vy = 0.0
+                self.thetadot = 0.0
+            def __str__(self):
+                return '*targets* x: {:6.3} y: {:6.3} theta: {:6.3} vx: {:6.3} vy: {:6.3} thetadot: {:6.3} '.format(
+                    self.x, self.y, self.theta, self.vx, self.vy, self.thetadot) 
+
+        # initial theta
+        theta_xy = math.atan2(final_y, final_x)
+
+        if abs(theta_xy) > 0.0:
+            left_speed = -1.0 if theta_xy > 0. else 1.0
+            left_edges = [0.0, left_speed, 0.0, 0.0]
+            right_edges = [0.0, -left_speed, 0.0, 0.0]
+            taus = [.2, .2, .2]
+        else:
+            theta_xy = 0.0
+        print()
+        targets = Targets()
+        targets.theta = theta_xy
+        print(targets)
+
+        left_edges, right_edges, taus = iterate(model, targets, left_edges, right_edges, taus,
+            tolerance=20.0, niters=100, deltat=0.025, alpha=0.00002, plot=plot, title='initial theta')
+
+        # now set the position
+        targets.x = final_x
+        targets.y = final_y
+        left_edges += [0.0]
+        right_edges += [0.0]
+        taus += [.1]
+        left_edges, right_edges, taus = iterate(model, targets, left_edges, right_edges, taus,
+            tolerance=20.0, niters=1000, deltat=0.025, alpha=0.00002, plot=plot, title='x y position')
+
+        # now rotate to the final theta
+        targets.theta = final_theta
+        left_edges += [0.0, 0.0]
+        right_edges += [0.0, 0.0]
+        taus += [.1, .1]
+        left_edges, right_edges, taus = iterate(model, targets, left_edges, right_edges, taus,
+            tolerance=2.0, niters=1000, deltat=0.025, alpha=0.00002, plot=plot, title='final theta')
 
     np.set_printoptions(precision=3, suppress=True)
-    test_get_dldv()
-    input('?')
+    test_pd_control()
 
 main_test()
 
