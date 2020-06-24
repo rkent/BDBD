@@ -17,53 +17,20 @@ import traceback
 from bdbd.srv import NodeCommand, NodeCommandResponse
 from Queue import Queue
 import sys
+import json
+import os
 
-Behaviors = {
-    'explore': [
-        'drivers',
-        't265min',
-        'sayit',
-        'hearit',
-        'speechResponse',
-        'gamepad',
-        'transforms',
-        'sr305min',
-        'detectBlocking',
-        'explore',
-    ],
-    'chat': [
-        'drivers',
-        'sayit',
-        'hearit',
-        'speechResponse',
-        'chat',
-    ],
-    'chase': [
-        'camera',
-        'detectnet',
-        'drivers',
-        'sayit',
-        'peoplechase',
-    ],
-    'voice': [
-        'drivers',
-        'sayit',
-        'hearit',
-        'speechResponse',
-    ],
-    'objects': [
-        'sayit',
-        #'sr305min',
-        'detectnet',
-        'reportObjects',
-        'camera',
-    ],
-}
+ROS_POLL_RATE = 100 # polls per second
+FILE_POLL_TIME = 1.0 # seconds per poll
 
 mainQueue = Queue()
 class NodeManagement:
     def __init__(self):
         rospy.init_node("bdnodes")
+
+        # load behaviors, and watch for changes
+        self.pollBehaviors()
+
         self.launchers = {} # the launcher objects used to start/stop nodes
         self.behaviors = set() # the requested behaviors
         self.launches = set() # the requested launches
@@ -78,6 +45,7 @@ class NodeManagement:
         rospy.loginfo('Ready to process commands')
         while not rospy.is_shutdown():
             if not mainQueue.empty():
+                self.pollBehaviors()
                 req_type, name, command, responseQueue = mainQueue.get()
                 response = None
 
@@ -103,6 +71,19 @@ class NodeManagement:
 
             else:
                 rate.sleep()
+
+    def pollBehaviors(self):
+        self.Behaviors_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'behaviors.json')
+        modTime = os.stat(self.Behaviors_path).st_mtime
+        try:
+            if modTime == self.BehaviorsModTime:
+                return
+        except AttributeError:
+            pass
+        rospy.loginfo('Loading behaviors file')
+        with open(self.Behaviors_path) as behaviors_file:
+            self.Behaviors = json.load(behaviors_file)
+        self.BehaviorsModTime = modTime
 
     def handle_launch(self, req):
         rospy.loginfo('Got launch request: {} {}'.format(req.name, req.command))
@@ -139,7 +120,7 @@ class NodeManagement:
                     return('active')
                 self.behaviors.add(behavior)
                 ret_response = 'started'
-                launches = Behaviors[behavior]
+                launches = self.Behaviors[behavior]
                 for launch in launches:
                     response = self.process_launch(launch, 'start')
                     if response == 'error':
@@ -197,7 +178,7 @@ class NodeManagement:
         needed_launches = set()
         for behavior in self.behaviors:
             print('behavior {}'.format(behavior))
-            for launch in Behaviors[behavior]:
+            for launch in self.Behaviors[behavior]:
                 print('launch {}'.format(launch))
                 needed_launches.add(launch)
         for launch in self.launches:
