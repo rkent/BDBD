@@ -12,6 +12,7 @@ from bdbd.srv import SpeechCommand
 from bdbd.srv import NodeCommand
 from std_msgs.msg import String
 from std_msgs.msg import Bool
+from libpy.Battery import Battery
 
 class TextStatus(enum.Enum):
     listen = 0
@@ -54,6 +55,11 @@ def main():
                     action = 'stop'
                 elif words[1] == 'repeat':
                     action = 'repeat'
+                elif words[1] == 'report':
+                    action = 'report'
+                    command = None
+                    if words[2] == 'battery':
+                        command = 'battery'
                 elif words[1].startswith('behav'):
                     action = 'behavior'
                     behavior = None
@@ -125,6 +131,11 @@ def main():
                 bdnodes_srv(behavior, action)
                 sayit = 'completed ' + detail
 
+            elif action == 'report':
+                if command == 'battery':
+                    sayit = 'battery voltage is ' + str(battery())
+                else:
+                    sayit = "I know nothing about that"
             else:
                 status.text = TextStatus.error
                 rospy.logwarn('Unknown action')
@@ -160,6 +171,7 @@ def main():
     sayit_srv = rospy.ServiceProxy('sayit', SpeechCommand)
     bdnodes_srv = rospy.ServiceProxy('/bdnodes/behavior', NodeCommand)
     pixelring_pub = rospy.Publisher('pixelring', String, queue_size=10)
+    battery = Battery()
     rospy.sleep(1)
     pixelring_pub.publish('spin')
     rospy.spin()

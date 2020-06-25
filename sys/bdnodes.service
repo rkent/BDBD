@@ -1,0 +1,11 @@
+[Unit]
+After=NetworkManager.service time-sync.target
+[Service]
+Type=forking
+User=kent
+# Launches bdnodes as a fork
+# —————————————————————-
+# Source all the environment variables, start roscore in a fork
+ExecStart=/bin/sh -c '. /home/kent/github/rkent/bdbd/devel/setup.sh ; . /etc/ros/env.sh ; roslaunch bdbd bdnodes.launch & done'
+[Install]
+WantedBy=multi-user.target
