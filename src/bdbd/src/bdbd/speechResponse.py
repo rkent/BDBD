@@ -25,6 +25,7 @@ class TextStatus(enum.Enum):
 class status():
     ''' object to hold global status'''
     last_sayit = ''
+    talk = True
 
 def main():
     def on_mike_status(msg):
@@ -60,6 +61,8 @@ def main():
                     command = None
                     if words[2] == 'battery':
                         command = 'battery'
+                    elif words[2].startswith('behavior'):
+                        command = 'behavior'
                 elif words[1].startswith('behav'):
                     action = 'behavior'
                     behavior = None
@@ -84,7 +87,15 @@ def main():
                     else:
                         action = 'sayit'
                         detail = "I don't know how to " + ' '.join(words[2:])
-
+                elif words[1] == 'status':
+                    action = 'sayit'
+                    detail = 'OK status {}'.format(words[2])
+                    if words[2] == 'quiet':
+                        status.talk = False
+                    elif words[2] == 'talk':
+                        status.talk = True
+                    else:
+                        detail = "I don't understand {}".format(words[2])
                 else:
                     action = 'sayit'
                     detail = "I can't " + ' '.join(words[1:])
@@ -110,7 +121,7 @@ def main():
 
             elif action == 'sayit':
                 sayit = detail
-                
+
             elif action == 'explore' or action == 'stop':
                 pixelring_pub.publish('purple')
                 status.text = TextStatus.speak
@@ -134,8 +145,12 @@ def main():
             elif action == 'report':
                 if command == 'battery':
                     sayit = 'battery voltage is ' + str(battery())
+                elif command == 'behavior':
+                    behaviors_str = bdnodes_srv('', 'report').response
+                    rospy.loginfo('reported active behaviors: {}'.format(behaviors_str))
+                    sayit = 'active behaviors are ' + behaviors_str
                 else:
-                    sayit = "I know nothing about that"
+                    sayit = "I know nothing about " + command
             else:
                 status.text = TextStatus.error
                 rospy.logwarn('Unknown action')
@@ -144,12 +159,15 @@ def main():
                 sayit = "sorry I can't " + ' '.join(words[1:])
 
             if sayit:
-                pixelring_pub.publish('purple')
-                status.text = TextStatus.speak
-                try:
-                    sayit_srv('say', sayit)
-                except rospy.ServiceException:
-                    rospy.logwarn('ROS service error: {}'.format(sys.exc_info()[1]))
+                if status.talk:
+                    pixelring_pub.publish('purple')
+                    status.text = TextStatus.speak
+                    try:
+                        sayit_srv('say', sayit)
+                    except rospy.ServiceException:
+                        rospy.logwarn('ROS service error: {}'.format(sys.exc_info()[1]))
+                else:
+                    rospy.loginfo('Wanted to say: {}'.format(sayit))
             status.text = TextStatus.listen
 
         # set pixelring led

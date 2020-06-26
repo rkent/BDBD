@@ -134,6 +134,13 @@ class NodeManagement:
                 self.behaviors.remove(behavior)
                 self.process_stops()
                 return 'stopped'
+
+            elif command == 'report':
+                response = ''
+                for behavior in self.behaviors:
+                    response += behavior + ','
+                return response
+
             else:
                 rospy.logwarn('Invalid behavior command {}'.format(command))
                 return 'error'
