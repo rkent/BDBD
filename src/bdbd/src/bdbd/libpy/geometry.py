@@ -2,6 +2,7 @@
 D_TO_R = 3.1415926535 / 180. # degrees to radians
 
 import tf
+import math
 from geometry_msgs.msg import Quaternion
 
 def poseDistance(pose1, pose2):

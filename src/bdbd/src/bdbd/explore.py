@@ -16,7 +16,7 @@ from bdbd.msg import AngledText
 from bdbd.msg import SpeechAction
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped, Quaternion
-from libpy.geometry import poseDistance, poseTheta, q_to_array, array_to_q, D_TO_R
+from libpy.geometry import poseDistance, poseTheta, D_TO_R
 
 try:
     from Queue import Queue, Empty
@@ -34,6 +34,12 @@ REVERSE_DISTANCE = 0.10 # How far to back up after forward obstacle
 REVERSE_ANGLE = 55 # degrees to change direction after a reverse
 DYNAMIC_DELAY = 0.15 # seconds to wait after motor change before recheck of status
 
+# proportional control parameters
+THETA_GAIN = 1.5
+DISTANCE_GAIN = 10.0
+BACKING_LIMIT = .06
+DISTANCE_TOLERANCE = .015
+
 # enums
 class Moving(Enum):
     STOPPED = 1
@@ -43,6 +49,7 @@ class Moving(Enum):
     REVERSE = 5
     ROTATE_LEFT = 6
     ROTATE_RIGHT = 7
+    TARGET = 8 # calculate left/right to move toward a target
 
 class Blocking(Enum):
     LEFT = 1
@@ -78,13 +85,34 @@ def msg_cb(msg):
     # callback just queues messages for processing
     queue.put(msg)
 
-def updateBlocking(roadBlocking, blocking):
-    #rospy.loginfo('roadBlocking: obstacles {:5.3f} {:5.3f} {:5.3f} road: {:5.3f} {:5.3f} {:5.3f}'.format(
-    #    roadBlocking.leftObstacleDepth, roadBlocking.centerObstacleDepth, roadBlocking.rightObstacleDepth,
-    #    roadBlocking.leftRoadDepth, roadBlocking.centerRoadDepth, roadBlocking.rightRoadDepth
-    #))
-    # update blocking state from distances
+def getLR(tfl, target_pose):
+    # get motor left, right for a target pose
+    vmax = SPEED
+    # determine the coordinates of the target relative to the robot
+    target_pose = tfl.transformPose('base_link', target_pose)
+    target_p = target_pose.pose.position
+    theta = math.atan2((target_p.y), (target_p.x))
+    distance = math.sqrt(target_p.y**2 + target_p.x**2)
 
+    rospy.loginfo('distance: {:6.3f} theta: {:6.3f} target x,y: {:6.3f}, {:6.3f}'.format(distance, theta, target_p.x, target_p.y))
+    # if distance is short, allow backing. If not, spin to proper orientation
+    if distance < BACKING_LIMIT:
+        right_speed = min(vmax, max(-vmax, DISTANCE_GAIN * distance * (math.cos(theta) + math.sin(theta))))
+        left_speed = min(vmax, max(-vmax, DISTANCE_GAIN * distance * (math.cos(theta) - math.sin(theta))))
+    else:
+        mx = min(vmax, DISTANCE_GAIN * distance)
+        if theta > 0.0:
+            right_speed = mx
+            left_speed = max(-mx, mx - THETA_GAIN * theta)
+        else:
+            left_speed = mx
+            right_speed = max(-mx, mx + THETA_GAIN * theta)
+    #rospy.loginfo('LR.left {:6.3f} .right {:6.3f}'.format(left_speed, right_speed))
+    return (left_speed, right_speed,)
+    #return (0.0, 0.0,)
+   
+def updateBlocking(roadBlocking, blocking):
+    # update blocking state from distances
     factor = (1. + HYST) if Blocking.LEFT in blocking else 1.0
     if roadBlocking.leftObstacleDepth < OBSTACLE_CLOSE_SIDES * factor:
         blocking.add(Blocking.LEFT)
@@ -143,13 +171,25 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
         if direction == Direction.STOPPED:
             new_state = Moving.STOPPED
 
-        elif direction in [Direction.FORWARD, Direction.EXPLORE]:
+        elif direction in [Direction.FORWARD, Direction.EXPLORE, Direction.TARGET]:
+            # check if we are done
+            if direction == Direction.TARGET:
+                pos = tfl.transformPose('base_link', target_pose).pose.position
+                distance = math.sqrt(pos.y**2 + pos.x**2)
+                rospy.loginfo('getNewMovement distance: {:6.3f}'.format(distance))
+                if distance < DISTANCE_TOLERANCE:
+                    # done with target
+                    objectives.pop(0)
+                    continue
+
             # move forward if possible
             if not {Blocking.CENTER, Blocking.DOWN_CENTER} & blocking:
                 if {Blocking.RIGHT, Blocking.DOWN_RIGHT} & blocking:
                     new_state = Moving.LEFT
                 elif {Blocking.LEFT, Blocking.DOWN_LEFT} & blocking:
                     new_state = Moving.RIGHT
+                elif direction == Direction.TARGET:
+                    new_state = Moving.TARGET
                 else:
                     new_state = Moving.FORWARD
             else:
@@ -240,9 +280,9 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
             raise RuntimeError('unknown direction {}'.format(direction))
     if new_state != Moving.STOPPED:
         rospy.logdebug('new_state: {}'.format(new_state))
-    return new_state
+    return new_state, target_pose
 
-def do_movement(moving_state):
+def do_movement(moving_state, tfl, target_pose):
     left, right = (0.0, 0.0)
     if moving_state == Moving.STOPPED:
         pass
@@ -262,6 +302,8 @@ def do_movement(moving_state):
     elif moving_state == Moving.ROTATE_LEFT:
         right = SPEED
         left = -SPEED
+    elif moving_state == Moving.TARGET:
+        (left, right) = getLR(tfl, target_pose)
     else:
         rospy.logwarn('unexpected moving state')
     return (left, right)
@@ -286,6 +328,7 @@ def main():
     left = 0.0
     right = 0.0
     current_pose = None
+    target_pose = None
     last_pose = None
 
     rospy.loginfo('{} starting with PID {}'.format(__name__, os.getpid()))
@@ -309,6 +352,16 @@ def main():
                     rospy.loginfo('Stop exploring')
                     objectives = []
 
+                if msg.name == 'BTN_NORTH' and msg.value == 1:
+                    # test of Direction.TARGET
+                    rospy.loginfo('Inserted test target objective')
+                    pose = PoseStamped()
+                    pose.header.frame_id = 'map'
+                    pose.pose.orientation.w = 1.0
+                    pose.pose.position.x = 0.2
+                    pose.pose.position.y = 0.2
+                    objectives = [Objective(Direction.TARGET, pose)]
+
             elif msg_type == 'bdbd/RoadBlocking':
                 if not tfl.canTransform('base_link', 'map', rospy.Time()):
                     rospy.logwarn('No transform from map to base_link')
@@ -327,14 +380,16 @@ def main():
                     if last_pose is None:
                         rospy.logdebug('No last_pose')
                         continue
-                    new_state = getNewMovement(objectives, blocking, current_pose, last_pose, tfl)
+                    new_state, target_pose = getNewMovement(objectives, blocking, current_pose, last_pose, tfl)
 
-                newleft, newright = do_movement(new_state)
-                if newleft != left or newright != right:
+                newleft, newright = do_movement(new_state, tfl, target_pose)
+                #rospy.loginfo('left: {} right: {} state: {}'.format(newleft, newright, new_state))
+                # log motion changes unless in TARGET
+                if new_state != Moving.TARGET and (newleft != left or newright != right):
                     rospy.logdebug('left is {:6.2f} right is {:6.2f}'.format(newleft, newright))
                     rospy.loginfo('blocking: {}'.format(blocking))
                     lastChange = time.time()
-                    motor_pub.publish(newleft, newright)
+                motor_pub.publish(newleft, newright)
                 left = newleft
                 right = newright
 
@@ -347,11 +402,9 @@ def main():
 
                 rospy.loginfo('explore heard: {}'.format(command))
                 if command == 'explore':
-                    new_direction = Direction.FORWARD
                     sayit_pub.publish('OK, start exploring')
                     objectives = [Objective(Direction.EXPLORE, None)]
                 elif command == 'stop':
-                    new_direction = Direction.STOPPED
                     sayit_pub.publish('OK, stop exploring')
                     objectives = []
     
