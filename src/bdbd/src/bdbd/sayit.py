@@ -8,6 +8,7 @@ except:
     from queue import Queue
 from espeakng import ESpeakNG
 from bdbd.libpy.googleTTS import GoogleTTS
+import traceback
 
 #ENGINE = 'espeak-ng'
 ENGINE = 'google'
@@ -41,23 +42,26 @@ class SayIt():
 
     def run(self):
         while not rospy.is_shutdown():
-            while not self._queue.empty():
-                # don't let requests accumulate
-                while self._queue.qsize() > 2:
-                    text, responseQueue = self._queue.get()
-                    if responseQueue:
-                        responseQueue.put('skipped')
+            try:
+                while not self._queue.empty():
+                    # don't let requests accumulate
+                    while self._queue.qsize() > 2:
+                        text, responseQueue = self._queue.get()
+                        if responseQueue:
+                            responseQueue.put('skipped')
 
-                text, responseQueue = self._queue.get()
-                rospy.loginfo('Saying:' + text)
-                self._talkingPub.publish(True)
-                if ENGINE == 'google':
-                    self._googleTTS.say(text)
-                else:
-                    self._espeak.say(text, sync=True)
-                self._talkingPub.publish(False)
-                if responseQueue:
-                    responseQueue.put('done')
+                    text, responseQueue = self._queue.get()
+                    rospy.loginfo('Saying:' + text)
+                    self._talkingPub.publish(True)
+                    if ENGINE == 'google':
+                        self._googleTTS.say(text)
+                    else:
+                        self._espeak.say(text, sync=True)
+                    self._talkingPub.publish(False)
+                    if responseQueue:
+                        responseQueue.put('done')
+            except:
+                rospy.logerr_once(traceback.format_exc())
 
             rospy.sleep(PERIOD)
 

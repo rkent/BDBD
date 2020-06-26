@@ -13,6 +13,9 @@ from bdbd.srv import NodeCommand
 from std_msgs.msg import String
 from std_msgs.msg import Bool
 from libpy.Battery import Battery
+from geometry_msgs.msg import PoseStamped
+from libpy.geometry import poseTheta, D_TO_R
+import tf
 
 class TextStatus(enum.Enum):
     listen = 0
@@ -63,6 +66,8 @@ def main():
                         command = 'battery'
                     elif words[2].startswith('behavior'):
                         command = 'behavior'
+                    elif words[2] == 'position':
+                        command = 'position'
                 elif words[1].startswith('behav'):
                     action = 'behavior'
                     behavior = None
@@ -149,6 +154,22 @@ def main():
                     behaviors_str = bdnodes_srv('', 'report').response
                     rospy.loginfo('reported active behaviors: {}'.format(behaviors_str))
                     sayit = 'active behaviors are ' + behaviors_str
+                elif command == 'position':
+                    base_pose = PoseStamped()
+                    base_pose.header.frame_id = 'base_link'
+                    base_pose.pose.orientation.w = 1.0
+                    zero_pose = PoseStamped()
+                    zero_pose.header.frame_id = 'map'
+                    zero_pose.pose.orientation.w = 1.0
+                    try:
+                        map_pose = tfl.transformPose('map', base_pose)
+                        x = map_pose.pose.position.x
+                        y = map_pose.pose.position.y
+                        theta = poseTheta(zero_pose, map_pose) / D_TO_R
+                        sayit = 'x is {:6.2f} meters, y is {:6.2f} meters, and theta is {:6.0f} degrees.'.format(x, y, theta)
+                    except tf.LookupException:
+                        sayit = 'Transforms inactive' 
+
                 else:
                     sayit = "I know nothing about " + command
             else:
@@ -182,6 +203,8 @@ def main():
 
     rospy.init_node('speechResponse')
     rospy.loginfo('{} starting with PID {}'.format(os.path.basename(__file__), os.getpid()))
+    tfl = tf.TransformListener()
+
     rospy.Subscriber('hearit/angled_text', AngledText, text_cb)
     rospy.Subscriber('mike/status', Bool, on_mike_status)
     action_pub = rospy.Publisher('speechResponse/action', SpeechAction, queue_size=10)
