@@ -33,6 +33,8 @@ SPEED = 0.8
 REVERSE_DISTANCE = 0.10 # How far to back up after forward obstacle
 REVERSE_ANGLE = 55 # degrees to change direction after a reverse
 DYNAMIC_DELAY = 0.15 # seconds to wait after motor change before recheck of status
+MOTOR_RAMP_RATE = 0.3 # seconds for first-order motor speed ramp rate filter
+MOTOR_RAMP_TOLERANCE = 0.05 # 
 
 # proportional control parameters
 THETA_GAIN = 1.5
@@ -85,8 +87,22 @@ def msg_cb(msg):
     # callback just queues messages for processing
     queue.put(msg)
 
+def motorRamp(left, right):
+    # limit rate of change of motors
+    if hasattr(motorRamp, 'lastTime'):   
+        deltaTime = time.time() - motorRamp.lastTime
+        deltaLeft = left - motorRamp.lastSpeeds[0]
+        deltaRight = right - motorRamp.lastSpeeds[1]
+        if abs(deltaLeft) > MOTOR_RAMP_TOLERANCE or abs(deltaRight) > MOTOR_RAMP_TOLERANCE:
+            factor = math.exp(-deltaTime / MOTOR_RAMP_RATE)
+            left -= deltaLeft * factor
+            right -= deltaRight * factor
+    motorRamp.lastSpeeds = left, right
+    motorRamp.lastTime = time.time()
+    return left, right
+
 def getLR(tfl, target_pose):
-    # get motor left, right for a target pose
+    # get motor left, right for a target pose with proportional control
     vmax = SPEED
     # determine the coordinates of the target relative to the robot
     target_pose = tfl.transformPose('base_link', target_pose)
@@ -178,8 +194,12 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
                 distance = math.sqrt(pos.y**2 + pos.x**2)
                 rospy.loginfo('getNewMovement distance: {:6.3f}'.format(distance))
                 if distance < DISTANCE_TOLERANCE:
-                    # done with target
+                    # we reached out point, but now we need to rotate to orientation
                     objectives.pop(0)
+                    theta = poseTheta(current_pose, target_pose)
+                    dir = Direction.ROTATE_LEFT if theta > 0.0 else Direction.ROTATE_RIGHT
+                    objectives.insert(0, Objective(dir, target_pose))
+                    rospy.loginfo('Inserted rotate with theta {} dir {}'.format(theta, dir))
                     continue
 
             # move forward if possible
@@ -261,8 +281,8 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
         elif direction == Direction.ROTATE_LEFT:
             theta = poseTheta(current_pose, target_pose)
             delta_theta = poseTheta(current_pose, last_pose)
-            rospy.logdebug('theta: {} dtheta: {}'.format(theta, delta_theta))
-            if theta < 0.0 or delta_theta > 0.0:
+            rospy.loginfo('theta: {} dtheta: {}'.format(theta, delta_theta))
+            if theta < 0.0:
                 objectives.pop(0)
             else:
                 new_state = Moving.ROTATE_LEFT
@@ -270,8 +290,8 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
         elif direction == Direction.ROTATE_RIGHT:
             theta = poseTheta(current_pose, target_pose)
             delta_theta = poseTheta(current_pose, last_pose)
-            rospy.logdebug('theta: {} dtheta: {}'.format(theta, delta_theta))
-            if theta > 0.0 or delta_theta < 0.0:
+            rospy.loginfo('theta: {} dtheta: {}'.format(theta, delta_theta))
+            if theta > 0.0:
                 objectives.pop(0)
             else:
                 new_state = Moving.ROTATE_RIGHT
@@ -306,7 +326,7 @@ def do_movement(moving_state, tfl, target_pose):
         (left, right) = getLR(tfl, target_pose)
     else:
         rospy.logwarn('unexpected moving state')
-    return (left, right)
+    return motorRamp(left, right)
 
 # main code
 def main():
