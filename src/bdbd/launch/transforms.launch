@@ -3,7 +3,7 @@
     <node pkg="tf" type="static_transform_publisher" name="base_link_tf" args="-0.013 -0.019 -0.090 0 0 0 /t265_pose_frame /base_link 100"/>
     <node pkg="tf" type="static_transform_publisher" name="floor_tf" args="0 0 -0.0508 0 0 0 /base_link /floor 100"/>
     <node pkg="tf" type="static_transform_publisher" name="mike_tf" args="-0.052 0 0.119 0 0 0 /base_link /mike 100"/>
-    <node pkg="tf" type="static_transform_publisher" name="rear_wheels_tf" args="0 -.075 0 0 0 0 /floor /rear_wheels 100"/>
+    <node pkg="tf" type="static_transform_publisher" name="rear_wheels_tf" args="-.144 0 0 0 0 0 /floor /rear_wheels 100"/>
     <node pkg="tf" type="static_transform_publisher" name="pantilt_link_tf" args="-.108 -.009 .093 0 0 0 /base_link /pantilt_link 100"/>
     <node pkg="tf" type="static_transform_publisher" name="pantilt_base_tf" args="0 .008 .044 0 0 0 /pantilt_link /pantilt_base 100"/>
     <!-- <node pkg="tf" type="static_transform_publisher" name="pantilt_pan_tf" args="0 0 0 0 0 0 /pantilt_base /pantilt_pan 100"/> (dynamic) -->

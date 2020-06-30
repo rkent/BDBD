@@ -1,5 +1,9 @@
 # Simple set motors
 
+DURATION = 2.0
+LEFT = .2
+RIGHT = 0
+
 # Adapted from https://github.com/dusty-nv/jetbot_ros/blob/master/scripts/jetbot_motors.py
 # Adapted by R. Kent James <kent@caspia.com> for bdbd robot
 from Adafruit_MotorHAT import Adafruit_MotorHAT
@@ -42,13 +46,13 @@ def all_stop():
 if __name__ == '__main__':
     import time
     try:
-        left = .6
-        right = .6
+        left = LEFT
+        right = RIGHT
         print('motor on')
         # negative because of BDBD wiring
         set_speed(motor_left_ID,  -left)
         set_speed(motor_right_ID, -right)
-        time.sleep(3)
+        time.sleep(DURATION)
     except:
         pass
     all_stop()

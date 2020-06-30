@@ -7,6 +7,7 @@ import traceback
 import random
 import math
 from enum import Enum
+from copy import deepcopy
 import rospy
 import tf
 from bdbd.msg import RoadBlocking
@@ -24,20 +25,21 @@ except:
     from queue import Queue, Empty
 
 # constants
-MIN_RATE = 0.2 # how long to wait for a message until we panic and stop
+MIN_RATE = 1.0 # how long to wait for a message until we panic and stop
 OBSTACLE_CLOSE_CENTER = 0.20 # how close is too close for obstacle, in meters
 OBSTACLE_CLOSE_SIDES = 0.30
 DROPOFF_CLOSE = 0.30 # how much viable road before we declare a dropoff
 HYST = 0.25 # fractional change required to change state
 SPEED = 0.8
+SPEED_MIN = 0.25
 REVERSE_DISTANCE = 0.10 # How far to back up after forward obstacle
 REVERSE_ANGLE = 55 # degrees to change direction after a reverse
 DYNAMIC_DELAY = 0.15 # seconds to wait after motor change before recheck of status
-MOTOR_RAMP_RATE = 0.3 # seconds for first-order motor speed ramp rate filter
+MOTOR_RAMP_RATE = 0.2 # seconds for first-order motor speed ramp rate filter
 MOTOR_RAMP_TOLERANCE = 0.05 # 
 
 # proportional control parameters
-THETA_GAIN = 1.5
+THETA_GAIN = 3.0
 DISTANCE_GAIN = 10.0
 BACKING_LIMIT = .06
 DISTANCE_TOLERANCE = .015
@@ -66,12 +68,13 @@ class Direction(Enum):
     REVERSE = 2
     ROTATE_LEFT = 3
     ROTATE_RIGHT = 4
-    EXPLORE = 5
+    # EXPLORE = 5
     STOPPED = 6
     ROTATE_LEFT_CLEAR = 7 # rotate until clear
     ROTATE_RIGHT_CLEAR = 8
-    ROTATE = 9 # choose best direction of rotation
+    ROTATE = 9 # choose best direction of rotation base on blocking or pose
     TARGET = 10 # move to the target pose
+    TARGET_POINT = 11 # move to target pose point
 
 # classes
 class Objective():
@@ -86,6 +89,12 @@ queue = Queue()
 def msg_cb(msg):
     # callback just queues messages for processing
     queue.put(msg)
+
+def zeroPose(frame):
+    pose = PoseStamped()
+    pose.header.frame_id = frame
+    pose.pose.orientation.w = 1.0
+    return pose
 
 def motorRamp(left, right):
     # limit rate of change of motors
@@ -105,12 +114,11 @@ def getLR(tfl, target_pose):
     # get motor left, right for a target pose with proportional control
     vmax = SPEED
     # determine the coordinates of the target relative to the robot
-    target_pose = tfl.transformPose('base_link', target_pose)
+    target_pose = tfl.transformPose('rear_wheels', target_pose)
     target_p = target_pose.pose.position
     theta = math.atan2((target_p.y), (target_p.x))
     distance = math.sqrt(target_p.y**2 + target_p.x**2)
 
-    rospy.loginfo('distance: {:6.3f} theta: {:6.3f} target x,y: {:6.3f}, {:6.3f}'.format(distance, theta, target_p.x, target_p.y))
     # if distance is short, allow backing. If not, spin to proper orientation
     if distance < BACKING_LIMIT:
         right_speed = min(vmax, max(-vmax, DISTANCE_GAIN * distance * (math.cos(theta) + math.sin(theta))))
@@ -123,7 +131,15 @@ def getLR(tfl, target_pose):
         else:
             left_speed = mx
             right_speed = max(-mx, mx + THETA_GAIN * theta)
-    #rospy.loginfo('LR.left {:6.3f} .right {:6.3f}'.format(left_speed, right_speed))
+
+    # scale the motors according to SPEED_MIN if needed
+    speed = math.sqrt(left_speed**2 + right_speed**2) # not really a vector, just scaling
+    if speed > 0.0 and speed < SPEED_MIN:
+        left_speed = left_speed * (SPEED_MIN/speed)
+        right_speed = right_speed * (SPEED_MIN/speed)
+
+    rospy.loginfo('LR distance: {:6.3f} theta: {:6.3f} target x,y: {:6.3f}, {:6.3f} left, right: {:6.3f}, {:6.3f}'
+        .format(distance, theta, target_p.x, target_p.y, left_speed, right_speed))
     return (left_speed, right_speed,)
     #return (0.0, 0.0,)
    
@@ -172,12 +188,9 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
     while new_state is None:
         direction = objectives and objectives[0].direction or Direction.STOPPED
         if direction != Direction.STOPPED:
-            directions = []
-            for objective in objectives:
-                directions.append(objective.direction) 
             rospy.logdebug('objectives.direction: {} blocking: {}'.format(direction, blocking))
         target_pose = objectives and objectives[0].poseTarget or None
-        # rospy.loginfo('current_pose: {}'.format(current_pose))
+        # rospy.loginfo('current_pose {}'.format(current_pose))
         current_pose = tfl.transformPose('map', current_pose)
         last_pose = tfl.transformPose('map', last_pose)
         if target_pose is not None:
@@ -187,31 +200,47 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
         if direction == Direction.STOPPED:
             new_state = Moving.STOPPED
 
-        elif direction in [Direction.FORWARD, Direction.EXPLORE, Direction.TARGET]:
-            # check if we are done
-            if direction == Direction.TARGET:
-                pos = tfl.transformPose('base_link', target_pose).pose.position
-                distance = math.sqrt(pos.y**2 + pos.x**2)
+        elif direction == Direction.TARGET:
+            objectives.pop(0)
+            # We'll accomplish the target in two phases: first, an LR phase that moves
+            # the rear wheel position to a final position. Second, a rotation to the final angle.
+            #
+            objectives.insert(0, Objective(Direction.ROTATE, target_pose))
+
+            # Calculate the rear wheel position at target, and move to it
+            rear_target = deepcopy(target_pose)
+            rospy.loginfo('TARGET pose: {}'.format(rear_target))
+            base_position = tfl.transformPose('rear_wheels', zeroPose('base_link')).pose.position
+            delta = base_position.x # assumes y offset from base to rear is zero
+            theta = poseTheta(target_pose, zeroPose('map'))
+            rear_target.pose.position.x -= delta * math.cos(theta)
+            rear_target.pose.position.y -= delta * math.sin(theta)
+            objectives.insert(0, Objective(Direction.TARGET_POINT, rear_target))
+            rospy.loginfo('TARGET inserted move to ({:6.3f}, {:6.3f}) theta {:6.3f} delta {:6.3f}'
+                .format(rear_target.pose.position.x, rear_target.pose.position.y, theta, delta))
+
+        elif direction in [Direction.FORWARD, Direction.TARGET_POINT]:
+            if direction == Direction.TARGET_POINT:
+                # check if we are done
+                target_p = tfl.transformPose('rear_wheels', target_pose).pose.position
+                distance = math.sqrt(target_p.y**2 + target_p.x**2)
                 rospy.loginfo('getNewMovement distance: {:6.3f}'.format(distance))
                 if distance < DISTANCE_TOLERANCE:
-                    # we reached out point, but now we need to rotate to orientation
+                    # we reached our point
                     objectives.pop(0)
-                    theta = poseTheta(current_pose, target_pose)
-                    dir = Direction.ROTATE_LEFT if theta > 0.0 else Direction.ROTATE_RIGHT
-                    objectives.insert(0, Objective(dir, target_pose))
-                    rospy.loginfo('Inserted rotate with theta {} dir {}'.format(theta, dir))
                     continue
 
             # move forward if possible
             if not {Blocking.CENTER, Blocking.DOWN_CENTER} & blocking:
+                # TODO: make this work better with LR
                 if {Blocking.RIGHT, Blocking.DOWN_RIGHT} & blocking:
                     new_state = Moving.LEFT
                 elif {Blocking.LEFT, Blocking.DOWN_LEFT} & blocking:
                     new_state = Moving.RIGHT
-                elif direction == Direction.TARGET:
-                    new_state = Moving.TARGET
                 else:
-                    new_state = Moving.FORWARD
+                    # not blocking
+                    new_state = Moving.TARGET if direction == Direction.TARGET_POINT else Moving.FORWARD
+
             else:
                 # reverse then rotate
                 objectives.insert(0, Objective(Direction.ROTATE, None))
@@ -247,51 +276,59 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
                 objectives.pop(0)
 
         elif direction == Direction.ROTATE:
+            # used to insert a rotate decision in the future
             objectives.pop(0)
-            # choose a new rotation direction based on current position
-            br = {Blocking.RIGHT, Blocking.DOWN_RIGHT} & blocking
-            bl = {Blocking.LEFT, Blocking.DOWN_LEFT} & blocking
-            bc = {Blocking.CENTER, Blocking.DOWN_CENTER} & blocking
-            if not bl:
-                new_direction = Direction.ROTATE_LEFT_CLEAR
-            elif not br:
-                new_direction = Direction.ROTATE_RIGHT_CLEAR
+
+            if not target_pose:
+                # choose a new rotation direction based on blocking
+                br = {Blocking.RIGHT, Blocking.DOWN_RIGHT} & blocking
+                bl = {Blocking.LEFT, Blocking.DOWN_LEFT} & blocking
+                if not bl:
+                    new_direction = Direction.ROTATE_LEFT_CLEAR
+                elif not br:
+                    new_direction = Direction.ROTATE_RIGHT_CLEAR
+                else:
+                    new_direction = random.choice([Direction.ROTATE_LEFT_CLEAR, Direction.ROTATE_RIGHT_CLEAR])
+                rotate_direction = Direction.ROTATE_LEFT if new_direction == Direction.ROTATE_LEFT_CLEAR else Direction.ROTATE_RIGHT
+                objectives.insert(0, Objective(new_direction, None))
+
+                # But first rotate a minimum amount
+                theta = REVERSE_ANGLE if rotate_direction == Direction.ROTATE_LEFT else -REVERSE_ANGLE
+                q_orig = tf.transformations.quaternion_from_euler(0, 0, 0)
+                q_rot = tf.transformations.quaternion_from_euler(0, 0, theta * D_TO_R)
+                q_new = tf.transformations.quaternion_multiply(q_rot, q_orig)
+                o_new = Quaternion()
+                o_new.x = q_new[0]
+                o_new.y = q_new[1]
+                o_new.z = q_new[2]
+                o_new.w = q_new[3]
+                pose_new = tfl.transfomPose('base_link', current_pose)
+                pose_new.pose.orientation = o_new
+                pose_new = tfl.transformPose('map', pose_new)
             else:
-                new_direction = random.choice([Direction.ROTATE_LEFT_CLEAR, Direction.ROTATE_RIGHT_CLEAR])
-            rotate_direction = Direction.ROTATE_LEFT if new_direction == Direction.ROTATE_LEFT_CLEAR else Direction.ROTATE_RIGHT
+                # choose rotation based on target pose
+                pose_new = target_pose
+                theta = poseTheta(current_pose, pose_new)
+                rotate_direction = Direction.ROTATE_LEFT if theta > 0.0 else Direction.ROTATE_RIGHT
 
-            objectives.insert(0, Objective(new_direction, None))
-
-            # But first rotate a minimum amount
-            dtheta = REVERSE_ANGLE if rotate_direction == Direction.ROTATE_LEFT else -REVERSE_ANGLE
-            q_orig = tf.transformations.quaternion_from_euler(0, 0, 0)
-            q_rot = tf.transformations.quaternion_from_euler(0, 0, dtheta * D_TO_R)
-            q_new = tf.transformations.quaternion_multiply(q_rot, q_orig)
-            o_new = Quaternion();
-            o_new.x = q_new[0]
-            o_new.y = q_new[1]
-            o_new.z = q_new[2]
-            o_new.w = q_new[3]
-            pose_new = tfl.transformPose('base_link', current_pose)
-            pose_new.pose.orientation = o_new
-            pose_new = tfl.transformPose('map', pose_new)
             objectives.insert(0, Objective(rotate_direction, pose_new))
             new_state = Moving.ROTATE_LEFT if rotate_direction == Direction.ROTATE_LEFT else Moving.ROTATE_RIGHT
+            rospy.loginfo('Inserted rotate to theta with theta {} dir {}'.format(theta, rotate_direction))
 
         elif direction == Direction.ROTATE_LEFT:
-            theta = poseTheta(current_pose, target_pose)
+            theta= poseTheta(current_pose, target_pose)
             delta_theta = poseTheta(current_pose, last_pose)
             rospy.loginfo('theta: {} dtheta: {}'.format(theta, delta_theta))
-            if theta < 0.0:
+            if theta - delta_theta < 0.0: # end early
                 objectives.pop(0)
             else:
                 new_state = Moving.ROTATE_LEFT
 
         elif direction == Direction.ROTATE_RIGHT:
-            theta = poseTheta(current_pose, target_pose)
+            theta= poseTheta(current_pose, target_pose)
             delta_theta = poseTheta(current_pose, last_pose)
             rospy.loginfo('theta: {} dtheta: {}'.format(theta, delta_theta))
-            if theta > 0.0:
+            if theta + delta_theta > 0.0: # end early
                 objectives.pop(0)
             else:
                 new_state = Moving.ROTATE_RIGHT
@@ -366,7 +403,7 @@ def main():
                 if msg.name == 'BTN_START' and msg.value == 1:
                     # clear objective stack to start afresh
                     rospy.loginfo('Start exploring')
-                    objectives = [Objective(Direction.EXPLORE, None)]
+                    objectives = [Objective(Direction.FORWARD, None)]
 
                 if msg.name == 'BTN_SELECT' and msg.value == 1:
                     rospy.loginfo('Stop exploring')
@@ -423,17 +460,17 @@ def main():
                 rospy.loginfo('explore heard: {}'.format(command))
                 if command == 'explore':
                     sayit_pub.publish('OK, start exploring')
-                    objectives = [Objective(Direction.EXPLORE, None)]
+                    objectives = [Objective(Direction.FORWARD, None)]
                 elif command == 'stop':
                     sayit_pub.publish('OK, stop exploring')
                     objectives = []
     
             elif msg_type == 'geometry_msgs/PoseStamped':
-                # this is an an objective addition, to move to a target pose. It overrides a final EXPLORE objective,
+                # this is an an objective addition, to move to a target pose. It overrides a final FORWARD objective,
                 # or another target pose, at the end of the objective queue.
                 while len(objectives):
                     final_objective = objectives[-1]
-                    if final_objective.direction in (Direction.EXPLORE, Direction.TARGET, Direction.FORWARD,):
+                    if final_objective.direction in (Direction.TARGET, Direction.FORWARD,):
                         final_objective.pop(-1)
                     else:
                         break
