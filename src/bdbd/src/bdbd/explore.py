@@ -31,7 +31,7 @@ OBSTACLE_CLOSE_SIDES = 0.30
 DROPOFF_CLOSE = 0.30 # how much viable road before we declare a dropoff
 HYST = 0.25 # fractional change required to change state
 SPEED = 0.8
-SPEED_MIN = 0.25
+SPEED_MIN = 0.20
 REVERSE_DISTANCE = 0.10 # How far to back up after forward obstacle
 REVERSE_ANGLE = 55 # degrees to change direction after a reverse
 DYNAMIC_DELAY = 0.15 # seconds to wait after motor change before recheck of status
@@ -41,8 +41,10 @@ MOTOR_RAMP_TOLERANCE = 0.05 #
 # proportional control parameters
 THETA_GAIN = 3.0
 DISTANCE_GAIN = 10.0
+ROTATE_GAIN = 0.5
 BACKING_LIMIT = .06
 DISTANCE_TOLERANCE = .015
+THETA_TOLERANCE = .05
 
 # enums
 class Moving(Enum):
@@ -53,7 +55,8 @@ class Moving(Enum):
     REVERSE = 5
     ROTATE_LEFT = 6
     ROTATE_RIGHT = 7
-    TARGET = 8 # calculate left/right to move toward a target
+    TARGET_DISTANCE = 8 # calculate left/right to move toward a target
+    TARGET_THETA = 9 # calculate left/right to rotate to an angle
 
 class Blocking(Enum):
     LEFT = 1
@@ -110,8 +113,8 @@ def motorRamp(left, right):
     motorRamp.lastTime = time.time()
     return left, right
 
-def getLR(tfl, target_pose):
-    # get motor left, right for a target pose with proportional control
+def getLR_distance(tfl, target_pose):
+    # get motor left, right for distance of rear_wheels to target with proportional control
     vmax = SPEED
     # determine the coordinates of the target relative to the robot
     target_pose = tfl.transformPose('rear_wheels', target_pose)
@@ -142,6 +145,27 @@ def getLR(tfl, target_pose):
         .format(distance, theta, target_p.x, target_p.y, left_speed, right_speed))
     return (left_speed, right_speed,)
     #return (0.0, 0.0,)
+   
+def getLR_theta(tfl, target_pose):
+    # get motor left, right to rotate to correct target_pose theta
+    vmax = SPEED
+    current_pose = tfl.transformPose('map', zeroPose('base_link'))
+    theta = poseTheta(current_pose, target_pose)
+    if abs(theta) > THETA_TOLERANCE:
+        right_speed = min(vmax, max(-vmax, ROTATE_GAIN * theta))
+        left_speed = -right_speed
+
+        # scale the motors according to SPEED_MIN if needed
+        speed = math.sqrt(left_speed**2 + right_speed**2) # not really a vector, just scaling
+        if speed > 0.0 and speed < SPEED_MIN:
+            left_speed = left_speed * (SPEED_MIN/speed)
+            right_speed = -left_speed
+    else:
+        left_speed, right_speed = 0.0, 0.0
+
+    rospy.loginfo('LR_theta theta: {:6.3f} left, right: {:6.3f}, {:6.3f}'
+        .format(theta, left_speed, right_speed))
+    return (left_speed, right_speed,)
    
 def updateBlocking(roadBlocking, blocking):
     # update blocking state from distances
@@ -239,7 +263,7 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
                     new_state = Moving.RIGHT
                 else:
                     # not blocking
-                    new_state = Moving.TARGET if direction == Direction.TARGET_POINT else Moving.FORWARD
+                    new_state = Moving.TARGET_DISTANCE if direction == Direction.TARGET_POINT else Moving.FORWARD
 
             else:
                 # reverse then rotate
@@ -315,23 +339,12 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
             new_state = Moving.ROTATE_LEFT if rotate_direction == Direction.ROTATE_LEFT else Moving.ROTATE_RIGHT
             rospy.loginfo('Inserted rotate to theta with theta {} dir {}'.format(theta, rotate_direction))
 
-        elif direction == Direction.ROTATE_LEFT:
-            theta= poseTheta(current_pose, target_pose)
-            delta_theta = poseTheta(current_pose, last_pose)
-            rospy.loginfo('theta: {} dtheta: {}'.format(theta, delta_theta))
-            if theta - delta_theta < 0.0: # end early
+        elif direction in [Direction.ROTATE_LEFT, Direction.ROTATE_RIGHT]:
+            ll, rr = getLR_theta(tfl, target_pose)
+            if ll == 0.0 and rr == 0.0:
                 objectives.pop(0)
             else:
-                new_state = Moving.ROTATE_LEFT
-
-        elif direction == Direction.ROTATE_RIGHT:
-            theta= poseTheta(current_pose, target_pose)
-            delta_theta = poseTheta(current_pose, last_pose)
-            rospy.loginfo('theta: {} dtheta: {}'.format(theta, delta_theta))
-            if theta + delta_theta > 0.0: # end early
-                objectives.pop(0)
-            else:
-                new_state = Moving.ROTATE_RIGHT
+                new_state = Moving.ROTATE_LEFT if direction == Direction.ROTATE_LEFT else Moving.ROTATE_RIGHT
 
         else:
             raise RuntimeError('unknown direction {}'.format(direction))
@@ -359,8 +372,8 @@ def do_movement(moving_state, tfl, target_pose):
     elif moving_state == Moving.ROTATE_LEFT:
         right = SPEED
         left = -SPEED
-    elif moving_state == Moving.TARGET:
-        (left, right) = getLR(tfl, target_pose)
+    elif moving_state == Moving.TARGET_DISTANCE:
+        (left, right) = getLR_distance(tfl, target_pose)
     else:
         rospy.logwarn('unexpected moving state')
     return motorRamp(left, right)
@@ -442,7 +455,7 @@ def main():
                 newleft, newright = do_movement(new_state, tfl, target_pose)
                 #rospy.loginfo('left: {} right: {} state: {}'.format(newleft, newright, new_state))
                 # log motion changes unless in TARGET
-                if new_state != Moving.TARGET and (newleft != left or newright != right):
+                if new_state != Moving.TARGET_DISTANCE and (newleft != left or newright != right):
                     rospy.logdebug('left is {:6.2f} right is {:6.2f}'.format(newleft, newright))
                     rospy.loginfo('blocking: {}'.format(blocking))
                     lastChange = time.time()
