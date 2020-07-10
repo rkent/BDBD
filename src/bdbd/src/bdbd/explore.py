@@ -17,7 +17,8 @@ from bdbd.msg import AngledText
 from bdbd.msg import SpeechAction
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped, Quaternion
-from libpy.geometry import poseDistance, poseTheta, D_TO_R
+from nav_msgs.msg import Odometry
+from libpy.geometry import poseDistance, poseTheta, D_TO_R, zeroPose
 
 try:
     from Queue import Queue, Empty
@@ -25,26 +26,29 @@ except:
     from queue import Queue, Empty
 
 # constants
-MIN_RATE = 1.0 # how long to wait for a message until we panic and stop
+RATE = 10 # frequency of main loop and motion update
+MIN_TIME = 1.0 # how long to wait for a blocking message until we panic and stop
 OBSTACLE_CLOSE_CENTER = 0.20 # how close is too close for obstacle, in meters
 OBSTACLE_CLOSE_SIDES = 0.30
 DROPOFF_CLOSE = 0.30 # how much viable road before we declare a dropoff
 HYST = 0.25 # fractional change required to change state
 SPEED = 0.8
-SPEED_MIN = 0.20
+SPEED_MIN = 0.25
 REVERSE_DISTANCE = 0.10 # How far to back up after forward obstacle
 REVERSE_ANGLE = 55 # degrees to change direction after a reverse
 DYNAMIC_DELAY = 0.15 # seconds to wait after motor change before recheck of status
-MOTOR_RAMP_RATE = 0.2 # seconds for first-order motor speed ramp rate filter
+MOTOR_RAMP_RATE = 0.1 # seconds for first-order motor speed ramp rate filter
 MOTOR_RAMP_TOLERANCE = 0.05 # 
 
 # proportional control parameters
-THETA_GAIN = 3.0
-DISTANCE_GAIN = 10.0
-ROTATE_GAIN = 0.5
+THETA_GAIN = 10.0
+DISTANCE_GAIN = 5.0
+ROTATE_GAIN = 2.0
 BACKING_LIMIT = .06
-DISTANCE_TOLERANCE = .015
+DISTANCE_TOLERANCE_1 = .015
+DISTANCE_TOLERANCE_2 = .100
 THETA_TOLERANCE = .05
+DURATION_MS = rospy.Duration(0, 1000000)
 
 # enums
 class Moving(Enum):
@@ -78,6 +82,7 @@ class Direction(Enum):
     ROTATE = 9 # choose best direction of rotation base on blocking or pose
     TARGET = 10 # move to the target pose
     TARGET_POINT = 11 # move to target pose point
+    TARGET_THETA = 12 # rotate to a target pose
 
 # classes
 class Objective():
@@ -92,12 +97,6 @@ queue = Queue()
 def msg_cb(msg):
     # callback just queues messages for processing
     queue.put(msg)
-
-def zeroPose(frame):
-    pose = PoseStamped()
-    pose.header.frame_id = frame
-    pose.pose.orientation.w = 1.0
-    return pose
 
 def motorRamp(left, right):
     # limit rate of change of motors
@@ -123,29 +122,31 @@ def getLR_distance(tfl, target_pose):
     distance = math.sqrt(target_p.y**2 + target_p.x**2)
 
     # if distance is short, allow backing. If not, spin to proper orientation
-    if distance < BACKING_LIMIT:
-        right_speed = min(vmax, max(-vmax, DISTANCE_GAIN * distance * (math.cos(theta) + math.sin(theta))))
-        left_speed = min(vmax, max(-vmax, DISTANCE_GAIN * distance * (math.cos(theta) - math.sin(theta))))
+    if distance < DISTANCE_TOLERANCE_1:
+        left_speed, right_speed = 0.0, 0.0
     else:
-        mx = min(vmax, DISTANCE_GAIN * distance)
-        if theta > 0.0:
-            right_speed = mx
-            left_speed = max(-mx, mx - THETA_GAIN * theta)
+        if distance < BACKING_LIMIT:
+            right_speed = min(vmax, max(-vmax, DISTANCE_GAIN * distance * (math.cos(theta) + math.sin(theta))))
+            left_speed = min(vmax, max(-vmax, DISTANCE_GAIN * distance * (math.cos(theta) - math.sin(theta))))
         else:
-            left_speed = mx
-            right_speed = max(-mx, mx + THETA_GAIN * theta)
+            mx = min(vmax, DISTANCE_GAIN * distance)
+            if theta > 0.0:
+                right_speed = mx
+                left_speed = max(-mx, mx - THETA_GAIN * theta * distance)
+            else:
+                left_speed = mx
+                right_speed = max(-mx, mx + THETA_GAIN * theta * distance)
 
-    # scale the motors according to SPEED_MIN if needed
-    speed = math.sqrt(left_speed**2 + right_speed**2) # not really a vector, just scaling
-    if speed > 0.0 and speed < SPEED_MIN:
-        left_speed = left_speed * (SPEED_MIN/speed)
-        right_speed = right_speed * (SPEED_MIN/speed)
+        # scale the motors according to SPEED_MIN if needed
+        speed = math.sqrt(left_speed**2 + right_speed**2) # not really a vector, just scaling
+        if speed > 0.0 and speed < SPEED_MIN:
+            left_speed = left_speed * (SPEED_MIN/speed)
+            right_speed = right_speed * (SPEED_MIN/speed)
 
     rospy.loginfo('LR distance: {:6.3f} theta: {:6.3f} target x,y: {:6.3f}, {:6.3f} left, right: {:6.3f}, {:6.3f}'
         .format(distance, theta, target_p.x, target_p.y, left_speed, right_speed))
     return (left_speed, right_speed,)
-    #return (0.0, 0.0,)
-   
+
 def getLR_theta(tfl, target_pose):
     # get motor left, right to rotate to correct target_pose theta
     vmax = SPEED
@@ -245,12 +246,8 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
 
         elif direction in [Direction.FORWARD, Direction.TARGET_POINT]:
             if direction == Direction.TARGET_POINT:
-                # check if we are done
-                target_p = tfl.transformPose('rear_wheels', target_pose).pose.position
-                distance = math.sqrt(target_p.y**2 + target_p.x**2)
-                rospy.loginfo('getNewMovement distance: {:6.3f}'.format(distance))
-                if distance < DISTANCE_TOLERANCE:
-                    # we reached our point
+                ll, rr = getLR_distance(tfl, target_pose)
+                if ll == 0.0 and rr == 0.0:
                     objectives.pop(0)
                     continue
 
@@ -326,25 +323,26 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
                 o_new.y = q_new[1]
                 o_new.z = q_new[2]
                 o_new.w = q_new[3]
-                pose_new = tfl.transfomPose('base_link', current_pose)
+                pose_new = tfl.transformPose('base_link', current_pose)
                 pose_new.pose.orientation = o_new
                 pose_new = tfl.transformPose('map', pose_new)
             else:
                 # choose rotation based on target pose
                 pose_new = target_pose
-                theta = poseTheta(current_pose, pose_new)
-                rotate_direction = Direction.ROTATE_LEFT if theta > 0.0 else Direction.ROTATE_RIGHT
-
+                rotate_direction = Direction.TARGET_THETA
             objectives.insert(0, Objective(rotate_direction, pose_new))
-            new_state = Moving.ROTATE_LEFT if rotate_direction == Direction.ROTATE_LEFT else Moving.ROTATE_RIGHT
-            rospy.loginfo('Inserted rotate to theta with theta {} dir {}'.format(theta, rotate_direction))
 
-        elif direction in [Direction.ROTATE_LEFT, Direction.ROTATE_RIGHT]:
+        elif direction in [Direction.ROTATE_LEFT, Direction.ROTATE_RIGHT, Direction.TARGET_THETA]:
             ll, rr = getLR_theta(tfl, target_pose)
             if ll == 0.0 and rr == 0.0:
                 objectives.pop(0)
             else:
-                new_state = Moving.ROTATE_LEFT if direction == Direction.ROTATE_LEFT else Moving.ROTATE_RIGHT
+                if direction == Direction.ROTATE_LEFT:
+                    new_state = Moving.ROTATE_LEFT
+                elif direction == Direction.ROTATE_RIGHT:
+                    new_state = Moving.ROTATE_RIGHT
+                else:
+                    new_state = Moving.TARGET_THETA
 
         else:
             raise RuntimeError('unknown direction {}'.format(direction))
@@ -373,7 +371,11 @@ def do_movement(moving_state, tfl, target_pose):
         right = SPEED
         left = -SPEED
     elif moving_state == Moving.TARGET_DISTANCE:
-        (left, right) = getLR_distance(tfl, target_pose)
+        left, right = getLR_distance(tfl, target_pose)
+        twist = tfl.lookupTwist('rear_wheels', 'map', rospy.Time(0), 100*DURATION_MS)
+        rospy.loginfo('wheels twist: {}'.format(twist))
+    elif moving_state == Moving.TARGET_THETA:
+        left, right = getLR_theta(tfl, target_pose)
     else:
         rospy.logwarn('unexpected moving state')
     return motorRamp(left, right)
@@ -389,6 +391,7 @@ def main():
     gamepad_sub = rospy.Subscriber('/bdbd/gamepad/events', GamepadEvent, msg_cb)
     action_sub = rospy.Subscriber('speechResponse/action', SpeechAction, msg_cb)
     objective_sub = rospy.Subscriber('/bdbd/explore/poseTarget', PoseStamped, msg_cb)
+    odometry_sub = rospy.Subscriber('/t265/odom/sample', Odometry, msg_cb)
     motor_pub = rospy.Publisher('/bdbd/motors/cmd_raw', MotorsRaw, queue_size=10)
     sayit_pub = rospy.Publisher('/bdbd/sayit/text', String, queue_size=10)
     objectives = []
@@ -398,101 +401,124 @@ def main():
     left = 0.0
     right = 0.0
     current_pose = None
+    current_odometry = None
     target_pose = None
     last_pose = None
+    rate = rospy.Rate(RATE)
+    last_blocking_time = None
+    blocking_active = False
 
     rospy.loginfo('{} starting with PID {}'.format(__name__, os.getpid()))
 
     while not rospy.is_shutdown():
         try:
-            try:
-                msg = queue.get(True, MIN_RATE)
-            except Empty:
-                rospy.logwarn('explore message queue timeout')
-                continue
-            msg_type = str(msg._type)
+            rate.sleep()
 
-            if msg_type == 'bdbd/GamepadEvent':
-                if msg.name == 'BTN_START' and msg.value == 1:
-                    # clear objective stack to start afresh
-                    rospy.loginfo('Start exploring')
-                    objectives = [Objective(Direction.FORWARD, None)]
+            while not queue.empty():
+                msg = queue.get()
+                msg_type = str(msg._type)
 
-                if msg.name == 'BTN_SELECT' and msg.value == 1:
-                    rospy.loginfo('Stop exploring')
-                    objectives = []
+                if msg_type == 'bdbd/GamepadEvent':
+                    if msg.name == 'BTN_START' and msg.value == 1:
+                        # clear objective stack to start afresh
+                        rospy.loginfo('Start exploring')
+                        objectives = [Objective(Direction.FORWARD, None)]
 
-                if msg.name == 'BTN_NORTH' and msg.value == 1:
-                    # test of Direction.TARGET
-                    rospy.loginfo('Inserted test target objective')
-                    pose = PoseStamped()
-                    pose.header.frame_id = 'map'
-                    pose.pose.orientation.w = 1.0
-                    pose.pose.position.x = 0.2
-                    pose.pose.position.y = 0.2
-                    objectives = [Objective(Direction.TARGET, pose)]
+                    if msg.name == 'BTN_SELECT' and msg.value == 1:
+                        rospy.loginfo('Stop exploring')
+                        objectives = []
 
-            elif msg_type == 'bdbd/RoadBlocking':
-                if not tfl.canTransform('base_link', 'map', rospy.Time()):
-                    rospy.logwarn('No transform from map to base_link')
-                    new_state = Moving.STOPPED
+                    if msg.name == 'BTN_NORTH' and msg.value == 1:
+                        # test of Direction.TARGET
+                        rospy.loginfo('Inserted test target objective')
+                        pose = PoseStamped()
+                        pose.header.frame_id = 'map'
+                        pose.pose.orientation.w = 1.0
+                        pose.pose.position.x = 0.2
+                        pose.pose.position.y = 0.2
+                        objectives = [Objective(Direction.TARGET, pose)]
+
+                elif msg_type == 'bdbd/RoadBlocking':
+                    if not tfl.canTransform('base_link', 'map', rospy.Time()):
+                        rospy.logwarn('No transform from map to base_link')
+                        blocking_active = False
+                    else:
+                        updateBlocking(msg, blocking)
+                        if last_blocking_time is None:
+                            sayit_pub.publish('Blocking detection active')
+                        last_blocking_time = time.time()
+                        blocking_active = True
+
+                elif msg_type == 'bdbd/SpeechAction':
+                    command = msg.command
+
+                    rospy.loginfo('explore heard: {}'.format(command))
+                    if command == 'explore':
+                        sayit_pub.publish('OK, start exploring')
+                        objectives = [Objective(Direction.FORWARD, None)]
+                    elif command == 'stop':
+                        sayit_pub.publish('OK, stop exploring')
+                        objectives = []
+        
+                elif msg_type == 'geometry_msgs/PoseStamped':
+                    # this is an an objective addition, to move to a target pose. It overrides a final FORWARD objective,
+                    # or another target pose, at the end of the objective queue.
+                    while len(objectives):
+                        final_objective = objectives[-1]
+                        if final_objective.direction in (Direction.TARGET, Direction.FORWARD,):
+                            final_objective.pop(-1)
+                        else:
+                            break
+                    objectives.append(Objective(Direction.TARGET, msg))
+
+                elif msg_type == 'nav_msgs/Odometry':
+                    current_odometry = msg
                 else:
-                    updateBlocking(msg, blocking)
-                    last_pose = current_pose
-                    current_pose = PoseStamped()
-                    current_pose.header.frame_id = 'base_link'
-                    current_pose.pose.orientation.w = 1.0
-                    current_pose = tfl.transformPose('map', current_pose)
-                
-                    if time.time() < lastChange + DYNAMIC_DELAY:
-                        #rospy.loginfo('Give change time')
-                        continue
-                    if last_pose is None:
-                        rospy.logdebug('No last_pose')
-                        continue
-                    new_state, target_pose = getNewMovement(objectives, blocking, current_pose, last_pose, tfl)
+                    rospy.logwarn("Unexpected message type {}".format(msg_type))
 
-                newleft, newright = do_movement(new_state, tfl, target_pose)
-                #rospy.loginfo('left: {} right: {} state: {}'.format(newleft, newright, new_state))
-                # log motion changes unless in TARGET
-                if new_state != Moving.TARGET_DISTANCE and (newleft != left or newright != right):
-                    rospy.logdebug('left is {:6.2f} right is {:6.2f}'.format(newleft, newright))
+            last_pose = current_pose
+            current_pose = tfl.transformPose('map', zeroPose('base_link'))
+
+            if last_pose is None:
+                rospy.logdebug('No last_pose')
+                continue
+
+            new_state, target_pose = getNewMovement(objectives, blocking, current_pose, last_pose, tfl)
+
+            if not (last_blocking_time and last_blocking_time + MIN_TIME > time.time()):
+                if blocking_active:
+                    sayit_pub.publish('Blocking inactive')
+                blocking_active = False
+            if not blocking_active:
+                new_state = Moving.STOPPED
+
+            newleft, newright = do_movement(new_state, tfl, target_pose)
+            if new_state not in [Moving.TARGET_DISTANCE, Moving.TARGET_THETA]:
+                if time.time() < lastChange + DYNAMIC_DELAY:
+                    #rospy.loginfo('Give change time')
+                    continue
+
+                if newleft != left or newright != right:
+                    rospy.loginfo('left is {:6.2f} right is {:6.2f}'.format(newleft, newright))
                     rospy.loginfo('blocking: {}'.format(blocking))
                     lastChange = time.time()
-                motor_pub.publish(newleft, newright)
-                left = newleft
-                right = newright
 
-                if (actual_state != new_state):
-                    rospy.loginfo('Robot changing state to ' + str(new_state))
-                    actual_state = new_state
+            #rospy.loginfo('left: {} right: {} state: {}'.format(newleft, newright, new_state))
+            # log motion changes unless in TARGET
+            motor_pub.publish(newleft, newright)
+            left = newleft
+            right = newright
 
-            elif msg_type == 'bdbd/SpeechAction':
-                command = msg.command
+            if (actual_state != new_state):
+                rospy.loginfo('Robot changing state to ' + str(new_state))
+                actual_state = new_state
 
-                rospy.loginfo('explore heard: {}'.format(command))
-                if command == 'explore':
-                    sayit_pub.publish('OK, start exploring')
-                    objectives = [Objective(Direction.FORWARD, None)]
-                elif command == 'stop':
-                    sayit_pub.publish('OK, stop exploring')
-                    objectives = []
-    
-            elif msg_type == 'geometry_msgs/PoseStamped':
-                # this is an an objective addition, to move to a target pose. It overrides a final FORWARD objective,
-                # or another target pose, at the end of the objective queue.
-                while len(objectives):
-                    final_objective = objectives[-1]
-                    if final_objective.direction in (Direction.TARGET, Direction.FORWARD,):
-                        final_objective.pop(-1)
-                    else:
-                        break
-                objectives.append(Objective(Direction.TARGET, msg))
-
-            else:
-                rospy.logwarn("Unexpected message type {}".format(msg_type))
-
-            # rospy.loginfo('left: {:6.2f} right: {:6.2f}'.format(left, right))
+            # debug logging of odometry
+            if left != 0.0 and right != 0.0 and current_odometry:
+                pos = current_odometry.pose.pose.position
+                twist = current_odometry.twist.twist.linear
+                atwist = current_odometry.twist.twist.angular
+                rospy.loginfo('position: {}\nvelocity: {}\nangular: {}'.format(pos, twist, atwist))
 
         except:
             exc = traceback.format_exc()

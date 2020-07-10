@@ -3,7 +3,8 @@ D_TO_R = 3.1415926535 / 180. # degrees to radians
 
 import tf
 import math
-from geometry_msgs.msg import Quaternion
+import rospy
+from geometry_msgs.msg import Quaternion, PoseStamped, PointStamped
 
 def poseDistance(pose1, pose2):
     # calculate the distance between two PoseStamped types in the same frame
@@ -41,3 +42,28 @@ def array_to_q(array):
     q.w = array[3]
     return q
 
+def zeroPose(frame):
+    # a zero PoseStamped
+    pose = PoseStamped()
+    pose.header.frame_id = frame
+    pose.header.stamp = rospy.Time(0)
+    pose.pose.orientation.w = 1.0
+    return pose
+
+def zeroPoint(frame):
+    # a zero PointStamped
+    point = PointStamped()
+    point.header.frame_id = frame
+    point.header.stamp = rospy.Time(0)
+    return point
+
+def rotationCenter(frame, vx, vy, omega):
+    # center of rotation in frame. See RKJ notebook 2020-07-10
+    r = vx / omega
+    a = vy / omega
+    print(r, a)
+
+    center = zeroPoint(frame)
+    center.point.x = -a
+    center.point.y = r
+    return center

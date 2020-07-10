@@ -124,7 +124,7 @@ class NodeManagement:
                 for launch in launches:
                     response = self.process_launch(launch, 'start')
                     if response == 'error':
-                        rospy.logwarn('response {} to {}'.format(response, name))
+                        rospy.logwarn('response {} to {}'.format(response, launch))
                         ret_response = 'error'
                 return ret_response
 
