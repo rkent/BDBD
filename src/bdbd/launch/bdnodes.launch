@@ -1,4 +1,5 @@
 <launch>
-    <param name='/bdbd/behaviors' value='voice' />
+    <arg name='start' default='voice' />
+    <param name='/bdbd/behaviors' value='$(arg start)' />
     <node name='bdnodes' pkg='bdbd' type='bdnodes' output='screen' />
 </launch>

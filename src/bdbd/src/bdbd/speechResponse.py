@@ -12,6 +12,10 @@ from bdbd.srv import SpeechCommand
 from bdbd.srv import NodeCommand
 from std_msgs.msg import String
 from std_msgs.msg import Bool
+from libpy.Battery import Battery
+from geometry_msgs.msg import PoseStamped
+from libpy.geometry import poseTheta, D_TO_R
+import tf
 
 class TextStatus(enum.Enum):
     listen = 0
@@ -24,6 +28,7 @@ class TextStatus(enum.Enum):
 class status():
     ''' object to hold global status'''
     last_sayit = ''
+    talk = True
 
 def main():
     def on_mike_status(msg):
@@ -54,6 +59,15 @@ def main():
                     action = 'stop'
                 elif words[1] == 'repeat':
                     action = 'repeat'
+                elif words[1] == 'report':
+                    action = 'report'
+                    command = None
+                    if words[2] == 'battery':
+                        command = 'battery'
+                    elif words[2].startswith('behavior'):
+                        command = 'behavior'
+                    elif words[2] == 'position':
+                        command = 'position'
                 elif words[1].startswith('behav'):
                     action = 'behavior'
                     behavior = None
@@ -78,7 +92,15 @@ def main():
                     else:
                         action = 'sayit'
                         detail = "I don't know how to " + ' '.join(words[2:])
-
+                elif words[1] == 'status':
+                    action = 'sayit'
+                    detail = 'OK status {}'.format(words[2])
+                    if words[2] == 'quiet':
+                        status.talk = False
+                    elif words[2] == 'talk':
+                        status.talk = True
+                    else:
+                        detail = "I don't understand {}".format(words[2])
                 else:
                     action = 'sayit'
                     detail = "I can't " + ' '.join(words[1:])
@@ -104,7 +126,7 @@ def main():
 
             elif action == 'sayit':
                 sayit = detail
-                
+
             elif action == 'explore' or action == 'stop':
                 pixelring_pub.publish('purple')
                 status.text = TextStatus.speak
@@ -125,6 +147,31 @@ def main():
                 bdnodes_srv(behavior, action)
                 sayit = 'completed ' + detail
 
+            elif action == 'report':
+                if command == 'battery':
+                    sayit = 'battery voltage is ' + str(battery())
+                elif command == 'behavior':
+                    behaviors_str = bdnodes_srv('', 'report').response
+                    rospy.loginfo('reported active behaviors: {}'.format(behaviors_str))
+                    sayit = 'active behaviors are ' + behaviors_str
+                elif command == 'position':
+                    base_pose = PoseStamped()
+                    base_pose.header.frame_id = 'base_link'
+                    base_pose.pose.orientation.w = 1.0
+                    zero_pose = PoseStamped()
+                    zero_pose.header.frame_id = 'map'
+                    zero_pose.pose.orientation.w = 1.0
+                    try:
+                        map_pose = tfl.transformPose('map', base_pose)
+                        x = map_pose.pose.position.x
+                        y = map_pose.pose.position.y
+                        theta = poseTheta(zero_pose, map_pose) / D_TO_R
+                        sayit = 'x is {:6.2f} meters, y is {:6.2f} meters, and theta is {:6.0f} degrees.'.format(x, y, theta)
+                    except tf.LookupException:
+                        sayit = 'Transforms inactive' 
+
+                else:
+                    sayit = "I know nothing about " + command
             else:
                 status.text = TextStatus.error
                 rospy.logwarn('Unknown action')
@@ -133,12 +180,15 @@ def main():
                 sayit = "sorry I can't " + ' '.join(words[1:])
 
             if sayit:
-                pixelring_pub.publish('purple')
-                status.text = TextStatus.speak
-                try:
-                    sayit_srv('say', sayit)
-                except rospy.ServiceException:
-                    rospy.logwarn('ROS service error: {}'.format(sys.exc_info()[1]))
+                if status.talk:
+                    pixelring_pub.publish('purple')
+                    status.text = TextStatus.speak
+                    try:
+                        sayit_srv('say', sayit)
+                    except rospy.ServiceException:
+                        rospy.logwarn('ROS service error: {}'.format(sys.exc_info()[1]))
+                else:
+                    rospy.loginfo('Wanted to say: {}'.format(sayit))
             status.text = TextStatus.listen
 
         # set pixelring led
@@ -153,6 +203,8 @@ def main():
 
     rospy.init_node('speechResponse')
     rospy.loginfo('{} starting with PID {}'.format(os.path.basename(__file__), os.getpid()))
+    tfl = tf.TransformListener()
+
     rospy.Subscriber('hearit/angled_text', AngledText, text_cb)
     rospy.Subscriber('mike/status', Bool, on_mike_status)
     action_pub = rospy.Publisher('speechResponse/action', SpeechAction, queue_size=10)
@@ -160,6 +212,7 @@ def main():
     sayit_srv = rospy.ServiceProxy('sayit', SpeechCommand)
     bdnodes_srv = rospy.ServiceProxy('/bdnodes/behavior', NodeCommand)
     pixelring_pub = rospy.Publisher('pixelring', String, queue_size=10)
+    battery = Battery()
     rospy.sleep(1)
     pixelring_pub.publish('spin')
     rospy.spin()

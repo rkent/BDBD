@@ -70,9 +70,7 @@ def main():
                 rospy.loginfo('sound not recognized as speech')
                 voiceQueue.put(['', angle])
             except:
-                rospy.logwarn('Error in getVoice')
-                rospy.logerr(traceback.format_exc())
-                break
+                rospy.logwarn('Error in getVoice: {}'.format(traceback.format_exc()))
 
     rospy.init_node('hearit')
     rospy.loginfo('{} starting with PID {}'.format(os.path.basename(__file__), os.getpid()))
