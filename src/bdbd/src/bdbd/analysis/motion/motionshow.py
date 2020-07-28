@@ -28,12 +28,14 @@ import time
     output_sums[11] += a.y
     output_sums[12] += a.z
 '''
-outs = np.load('data/outputs.npy')
-ins = np.load('data/inputs.npy')
+outs = np.load('data/outputs_fortieth.npy')
+ins = np.load('data/inputs_fortieth.npy')
 
 Vx = outs[:, 7]
 Vy = outs[:, 8]
+Oz = outs[:, 12]
 Px = outs[:, 0]
+Py = outs[:, 1]
 print('Vx.shape: {}'.format(Vx.shape))
 print('ins.shape: {}'.format(ins.shape))
 
@@ -63,23 +65,9 @@ print('VxNormed.shape: {}'.format(VxNormed.shape))
 nsteps = 50
 batch_size = len(VxNormed) - 2* nsteps
 
-InsSeq = np.empty((batch_size, nsteps * 2, 2))
-OutsSeq = np.empty((batch_size, nsteps, 2))
-
-for i in range(batch_size):
-    for j in range(nsteps * 2):
-        InsSeq[i, j, :] = ins[i + j, :]
-        if j >= nsteps:
-            OutsSeq[i, int(j - nsteps), 0] = VxNormed[i + j]
-            OutsSeq[i, int(j - nsteps), 1] = Px[i + j] - Px[i + nsteps]
-
-
-print(OutsSeq.shape)
-print(InsSeq.shape)
-
 # show results
 for i in range(1400, batch_size):
-    print('i: {} l: {:6.3f} right: {:6.3f} Px: {:6.3f} Vx:{:6.3f} Vy:{:6.3f}'.format(i, ins[i,0], ins[i,1], Px[i], Vx[i], Vy[i]))
+    print('i: {} l: {:6.3f} r: {:6.3f} Px: {:6.3f} Py: {:6.3f} Vx:{:6.3f} Vy:{:6.3f} Oz:{:6.3f}'.format(i, ins[i,0], ins[i,1], Px[i], Py[i], Vx[i], Vy[i], Oz[i]))
     '''
     print('Px: (', end='')
     for j in range(nsteps):
