@@ -61,7 +61,7 @@ def rotationCenter(frame, vx, vy, omega):
     # center of rotation in frame. See RKJ notebook 2020-07-10
     r = vx / omega
     a = vy / omega
-    print(r, a)
+    #print(r, a)
 
     center = zeroPoint(frame)
     center.point.x = -a

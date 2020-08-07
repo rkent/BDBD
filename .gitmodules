@@ -22,3 +22,6 @@
 [submodule "src/timed_roslaunch"]
 	path = src/timed_roslaunch
 	url = https://github.com/MoriKen254/timed_roslaunch.git
+[submodule "src/bdbd_common"]
+	path = src/bdbd_common
+	url = git@github.com:rkent/bdbd_common.git

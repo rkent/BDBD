@@ -1,0 +1,14 @@
+[Unit]
+After=NetworkManager.service
+Wants=NetworkManager.service
+[Service]
+# adds a route for docker containers located on gw machine
+#
+ExecStart=/bin/bash -c 'while ! ping -c1 192.168.0.59; do sleep 1; done && /sbin/route add -net 172.16.0.0/12 gw 192.168.0.59 && echo "Hi"'
+User=root
+Type=oneshot
+TimeoutStartSec=60s
+
+[Install]
+WantedBy=multi-user.target
+
