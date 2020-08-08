@@ -60,7 +60,7 @@ def main():
                     audio, angle = r.listen(source)
                     #print(audio.get_wav_data()[0:40])
                     rospy.loginfo('Sound heard at angle: ' + str(angle))
-                    print('Sound heard at angle: ' + str(angle))
+                    #print('Sound heard at angle: ' + str(angle))
                     if audiopub.get_num_connections() > 0:
                         audiopub.publish(audio.get_wav_data())
                     text = recognizer(audio, credentials_json=google_key)
