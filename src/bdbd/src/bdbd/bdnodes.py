@@ -217,7 +217,6 @@ class NodeManagement:
 
         # stop any unneeded launchers
         for launch in self.launchers.copy():
-            print('checking launcher {}'.format(launch))
             if launch not in needed_launches:
                 rospy.loginfo('stopping {}'.format(launch))
                 if self.launchers[launch] == 'docker':
