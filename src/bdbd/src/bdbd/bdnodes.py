@@ -14,7 +14,8 @@ import rospy
 import roslaunch
 import time
 import traceback
-from bdbd.srv import NodeCommand, NodeCommandResponse
+from bdbd.srv import NodeCommand
+from bdbd_common.srv import DockerCommand
 from Queue import Queue
 import sys
 import json
@@ -29,14 +30,20 @@ class NodeManagement:
         rospy.init_node("bdnodes")
 
         # load behaviors, and watch for changes
+        self.BehaviorsModTime = None
         self.pollBehaviors()
 
         self.launchers = {} # the launcher objects used to start/stop nodes
         self.behaviors = set() # the requested behaviors
-        self.launches = set() # the requested launches
+        self.launches = set() # the requested launches from launch request (that is, not by behavior)
         start_behaviors_str = rospy.get_param('/bdbd/behaviors', '')
+        rospy.loginfo('Initial behaviors: {}'.format(start_behaviors_str))
 
+        # always start the remove docker service
+        mainQueue.put(['launch', 'dockers', 'start', None])
+        self.launches.add('dockers')
         for behavior in start_behaviors_str.split():
+            rospy.loginfo('Starting initial behavior {}'.format(behavior))
             mainQueue.put(['behavior', behavior, 'start', None])
 
         self.launchService = rospy.Service('~launch', NodeCommand, self.handle_launch)
@@ -75,11 +82,8 @@ class NodeManagement:
     def pollBehaviors(self):
         self.Behaviors_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'behaviors.json')
         modTime = os.stat(self.Behaviors_path).st_mtime
-        try:
-            if modTime == self.BehaviorsModTime:
-                return
-        except AttributeError:
-            pass
+        if self.BehaviorsModTime and modTime == self.BehaviorsModTime:
+            return
         rospy.loginfo('Loading behaviors file')
         with open(self.Behaviors_path) as behaviors_file:
             self.Behaviors = json.load(behaviors_file)
@@ -95,13 +99,14 @@ class NodeManagement:
             req.command = 'start'
         
         if req.command.startswith('start'):
-            self.launches.add(name)
+            self.launches.add(req.name)
         elif req.command == 'stop' or req.command == 'shutdown':
-            self.launces.discard(name)
+            self.launches.discard(req.name)
 
         responseQueue = Queue()
         mainQueue.put(['launch', req.name, req.command, responseQueue])
         response = responseQueue.get()
+        print('response type: {}'.format(type(response)))
         rospy.loginfo('Launch command response: [{}] to [{} {}]'.format(response, req.name, req.command))
         return(response)
 
@@ -149,21 +154,40 @@ class NodeManagement:
             rospy.logerr(traceback.format_exc())
             return('error')
 
+    def process_docker(self, name, command):
+        rospy.loginfo('process_docker: {} {}'.format(name, command))
+        result = 'error'
+        name = name.split(':')[0]
+        try:
+            rospy.wait_for_service('/bdbd_docker/containers', timeout=5)
+            containers = rospy.ServiceProxy('/bdbd_docker/containers', DockerCommand)
+            result = containers(name, command).response
+        except:
+            rospy.logerr('Error processing docker command: {}'.format(traceback.format_exc()))
+        return result
+
     def process_launch(self, name, command):
+        rospy.loginfo('process launch: {} {}'.format(name, command))
         if command.startswith('start'):
             if name in self.launchers:
                 response = 'active'
             else:
                 try:
-                    uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
-                    roslaunch.configure_logging(uuid)
-                    self.launchers[name] = roslaunch.parent.ROSLaunchParent(uuid, ['/home/kent/github/rkent/bdbd/src/bdbd/launch/' + name + '.launch'])
-                    self.launchers[name].start()
-                    response = 'started'
+                    if name.find(':docker') > 0:
+                        # start using docker service
+                        response = self.process_docker(name, command)
+                        if response != 'error':
+                            self.launchers[name] = 'docker'
+                    else:    
+                        uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
+                        roslaunch.configure_logging(uuid)
+                        self.launchers[name] = roslaunch.parent.ROSLaunchParent(uuid, ['/home/kent/github/rkent/bdbd/src/bdbd/launch/' + name + '.launch'])
+                        self.launchers[name].start()
+                        response = 'started'
                 except:
-                    rospy.logerr(sys.exc_info()[1])
+                    rospy.logerr(traceback.format_exc())
                     response = 'error'
-                    self.launchers.pop(name)
+                    self.launchers.pop(name, None)
 
         elif command == 'shutdown' or command == 'stop':
             self.process_stops()
@@ -193,11 +217,15 @@ class NodeManagement:
 
         # stop any unneeded launchers
         for launch in self.launchers.copy():
-            print('checking launcher {}'.format(launch))
             if launch not in needed_launches:
                 rospy.loginfo('stopping {}'.format(launch))
-                self.launchers[launch].shutdown()
+                if self.launchers[launch] == 'docker':
+                    self.process_docker(launch, 'stop')
+                else:
+                    self.launchers[launch].shutdown()
                 self.launchers.pop(launch)
+            else:
+                rospy.loginfo('continuing {}'.format(launch))
 
 def main():
     NodeManagement()

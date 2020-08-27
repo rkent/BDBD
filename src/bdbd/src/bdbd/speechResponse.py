@@ -16,6 +16,7 @@ from libpy.Battery import Battery
 from geometry_msgs.msg import PoseStamped
 from libpy.geometry import poseTheta, D_TO_R
 import tf
+import json
 
 class TextStatus(enum.Enum):
     listen = 0
@@ -73,14 +74,13 @@ def main():
                     behavior = None
                     command = None
 
-                    if words[2].startswith('explor'):
+                    if words[2] in Behaviors:
+                        behavior = words[2]
+                    # possible variants
+                    elif words[2].startswith('explor'):
                         behavior = 'explore'
-                    elif words[2] == 'chat':
-                        behavior = 'chat'
                     elif words[2].startswith('object'):
                         behavior = 'objects'
-                    elif words[2].startswith('chase'):
-                        behavior = 'chase'
 
                     if words[3] == 'start':
                         command = 'start'
@@ -204,6 +204,12 @@ def main():
     rospy.init_node('speechResponse')
     rospy.loginfo('{} starting with PID {}'.format(os.path.basename(__file__), os.getpid()))
     tfl = tf.TransformListener()
+
+    # Load the behaviors file to get allowable behaviors
+    Behaviors_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'behaviors.json')
+    rospy.loginfo('Loading behaviors file')
+    with open(Behaviors_path) as behaviors_file:
+        Behaviors = json.load(behaviors_file)
 
     rospy.Subscriber('hearit/angled_text', AngledText, text_cb)
     rospy.Subscriber('mike/status', Bool, on_mike_status)
