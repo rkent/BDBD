@@ -70,6 +70,51 @@ def rotationCenter(frame, vx, vy, omega):
     center.point.y = r
     return center
 
+def ccwPath(phi, x, y):
+    '''
+        determine a path from (0, 0) to a point at (x, y), with ending orientation phi from current
+        orientation. Path consists of two circles with the same radius, intersecting at a tangent.
+        See RKJ notebook circa 2020-09-12. This solution is just for initial CCW rotation. Negate
+        phi, Y, ey,  beta for CW rotation.
+    '''
+    A = 1.0 - math.cos(phi)
+    B = y * (1. + math.cos(phi)) - x * math.sin(phi)
+    C = - (x**2 + y**2) / 2.
+
+    # alternate form of quadratic equation, allows zero A
+    try:
+        rho = 2. * C / (-B - math.sqrt(B**2 - 4. * A * C))
+    except ZeroDivisionError:
+        rho = 1.e10
+
+    #   Calculate diagram values
+
+    # x distance from target point to second circle center
+    g = rho * math.sin(phi)
+    # x distance between circle centers
+    a = x + g
+    # y distance between circle centers.
+    b = rho * (1. + math.cos(phi)) - y
+    # arc angle on first circle. Also orientation of robot at intersection point.
+    beta = math.atan2(a , b)
+    # intersection coordinates of circle tangents
+    e = [rho * math.sin(beta), rho * (1. - math.cos(beta))]
+    # arc angle for second circle. If negative, solution is invalid.
+    gamma = beta - phi
+    returns = {}
+    for v in ['rho', 'beta', 'e', 'gamma']:
+        returns[v] = eval(v)
+    return returns
+
+def nearPath(phi, x, y):
+    # see ccw path
+    path = ccwPath(phi, x, y)
+    if path['gamma'] <= 0.0:
+        path = ccwPath(-phi, x, -y)
+        path['beta'] *= -1
+        path['e'][1] *= -1
+    return path
+ 
 def shortestPath(rho, phi, x, y):
     '''
         shortest path from (0, 0) to a point at (x, y), with ending orientation phi from current
