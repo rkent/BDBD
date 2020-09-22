@@ -11,6 +11,6 @@ rho = 0.5
 phis = [60.5, 18.5, 27.0, -90.0]
 yes = [2.0, 1.75, -2.0, -2.0]
 for i in range(0, len(phis)):
-    solution = shortestPath(rho, phis[i]* D_TO_R, x, yes[i])
+    solution = shortestPath(x, yes[i], phis[i]* D_TO_R, rho)
     print('Solution: {}'.format(solution))
     print('gamma: {:6.2f}'.format(solution['gamma']/D_TO_R))

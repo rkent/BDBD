@@ -12,7 +12,6 @@ import time
 from geometry_msgs.msg import PoseStamped, Vector3, Quaternion, Transform
 from bdbd_common.utils import fstr
 from bdbd_common.geometry import nearPath, D_TO_R, b_to_w, lrEstimate, dynamic_motion
-from bdbd_common.utils import fstr
 
 def path_from_lr(lrs, lr_model, start_pose, start_twist, target_pose, target_twist, mmax=1.0, error=.01):
     # model is in what we will call here 'base' frame
@@ -147,7 +146,7 @@ wheel_target_pose = b_to_w(target_pose, wheeldx)
 print(fstr({'wheel_start_pose': wheel_start_pose, 'wheel_target_pose': wheel_target_pose}))
 
 # determine optimal desired motion in wheel coordinates, where we can assume that frame vy = 0.
-path = nearPath(wheel_target_pose[2] - wheel_start_pose[2], wheel_target_pose[0] - wheel_start_pose[0], wheel_target_pose[1] - wheel_start_pose[1])
+path = nearPath(wheel_target_pose[0] - wheel_start_pose[0], wheel_target_pose[1] - wheel_start_pose[1], wheel_target_pose[2] - wheel_start_pose[2])
 print(fstr(path))
 
 # estimate left, right to achieve the path
