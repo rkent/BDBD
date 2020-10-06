@@ -28,7 +28,16 @@ approach_rho = 2.0
 '''
 
 # both ccw, 2020-08-26b pp 15
+'''
 theta_degrees = 60.5
+theta = theta_degrees * D_TO_R
+X = 12.0
+Y = 8.0
+approach_rho = 2.0
+'''
+
+# vary at will
+theta_degrees = -90.0
 theta = theta_degrees * D_TO_R
 X = 12.0
 Y = 8.0
