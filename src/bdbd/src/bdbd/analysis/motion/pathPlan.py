@@ -2,14 +2,16 @@
 
 import time
 import math
+import matplotlib.pyplot as plt
 from math import cos, sin, sqrt
 from geometry_msgs.msg import Pose, Twist
 from bdbd_common.utils import fstr
-from bdbd_common.geometry import threeSegmentPath, twoArcPath, D_TO_R, HALFPI, \
+from bdbd_common.geometry import threeSegmentPath, twoArcPath, D_TO_R, HALFPI, TWOPI, \
     Motor, default_lr_model, q_to_array, array_to_q, \
     nearestLinePoint, nearestArcPoint, transform2d
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 import tf
+import random
 
 class PathPlan():
     '''
@@ -34,7 +36,13 @@ class PathPlan():
         lr_model=default_lr_model(),
         approach_rho=0.2, # radius of planned approach
         min_rho=0.05, # the smallest radius we allow in a path plan,
-        rhohat=0.184  # tradeoff between speed and omega, see RKJ 2020-09-23 p 33
+        rhohat=0.184,  # tradeoff between speed and omega, see RKJ 2020-09-23 p 33
+        # control model parameters
+        Cd=250.,
+        Cp=2000.,
+        Cj=16.0,
+        Fp=4.0,
+        Fd=0.0
     ):
         self.s_plan = None
         self.path = None,
@@ -42,6 +50,20 @@ class PathPlan():
         self.approach_rho = approach_rho
         self.min_rho = min_rho
         self.rhohat = rhohat
+
+        # parameters for the control model. See RKJ 2020-10-07 p 47
+        self.Cd = Cd # sin(angle) to plan factor
+        # .130 is the distance from base to center of rotation
+        self.Cp = Cp # distance to plan factor
+        self.Cj = Cj # rate of change of sin(angle) to plan factor
+        self.Fp = Fp # velocity factor
+        self.Fd = Fd # rate of change of velocity factor
+        # parameters rarely changed
+        self.lpclose = 0.05 # distance from destination to start using actual kappa instead of plan
+        self.lpstart = 0.5 # fraction of plan length to stop considering expected speed from time
+        self.evold = 0.0
+        self.sinpold = 0.0
+        self.tt = 0.0
 
         # the offset from lr_model base of zero-vy center of rotation RKJ 2020-09-30 p 41
         (pyl, pyr, fy) = self.lr_model[1]
@@ -52,7 +74,6 @@ class PathPlan():
         self.wheel_r = (-self.dwheel, 0.0, 0.0)
         # the robot base (measurement point) relative to the center of rotation
         self.robot_w = (self.dwheel, 0.0, 0.0)
-        print(fstr({'wheel_r': self.wheel_r}))
 
     def start(self, start_pose, end_pose, start_twist=Twist(), end_twist=Twist(), start_t=None, motor_max = 0.9):
         self.start_pose = start_pose
@@ -79,12 +100,8 @@ class PathPlan():
 
         # a frame centered on robot base is the same as the base point in m frame
         self.wheelend_m = transform2d(self.wheel_r, self.end_m, self.frame_m)
-        print(fstr({'start_m': self.start_m, 'end_m': self.end_m, 'wheelstart_m': self.wheelstart_m, 'wheelend_m': self.wheelend_m}))
-
+        #print(fstr({'start_m': self.start_m, 'end_m': self.end_m, 'wheelstart_m': self.wheelstart_m, 'wheelend_m': self.wheelend_m}))
         self.end_p = transform2d(self.wheelend_m, self.frame_m, self.frame_p)
-        print(fstr({'end_p': self.end_p}))
-
-        # Initial Motion Plan
 
         # select the best two segment solution, if it exists
         paths2a = twoArcPath(*self.end_p)
@@ -95,15 +112,7 @@ class PathPlan():
                 if path2a is None or (p[0]['radius'] > self.min_rho and p[0]['radius'] < path2a[0]['radius']):
                     path2a = p
 
-        print('2 segment solution')
-        if path2a:
-            for s in path2a:
-                print(fstr(s))
-
         path3a = threeSegmentPath(*self.end_p, self.approach_rho)
-        print('3 segment solution')
-        for s in path3a:
-            print(fstr(s))
 
         if path2a and (
              path2a[0]['radius'] > self.min_rho and path2a[0]['radius'] < self.approach_rho
@@ -117,17 +126,16 @@ class PathPlan():
         self.path = path2a or path3a
 
         # add lprime to path plan, used by velocity
-        sprime_sum = 0.0
         for seg in self.path:
             if 'radius' in seg:
                 rho = seg['radius']
                 seg['lprime'] = seg['length'] * (rho + self.rhohat) / rho
             else:
-                seg['lprime'] = seg.length
+                seg['lprime'] = seg['length']
 
         return self.path
 
-    def speedPlan(self, vhat0, vhatcruise, vhatn, u=0.25):
+    def speedPlan(self, vhat0, vhatcruise, vhatn, u=0.50):
         '''
         Given the path plan, determine a speed plan. Speeds are in 'hat' transformed form,
         see RKJ 2020-09-23 p 33
@@ -222,8 +230,8 @@ class PathPlan():
         self.s_plan = s_plan
         return s_plan
 
-    def v(self, dt):
-        # return the expected position and velocities at time dt from plan start.
+    def v(self, tend):
+        # return the expected position and velocities at time tend from plan start.
         # these are all in wheel coordinates
 
         if self.s_plan is None or self.path is None:
@@ -236,20 +244,20 @@ class PathPlan():
         rho = None
         for i in range(len(self.s_plan)):
             seg = self.s_plan[i]
-            if dt > tt + seg['time']:
+            if tend > tt + seg['time']:
                 tt += seg['time']
                 continue
-            seg_time = dt - tt
+            seg_time = tend - tt
             seg_index = i
             break
 
-        # get speed, s from s_plan
+        # get speed, s from s_plan. Modify time to last plan time
         if seg_index is None:
             seg_index = len(self.s_plan) - 1
             seg_time = self.s_plan[seg_index]['time']
-            dt = 0.0
+            tend = 0.0
             for seg in self.s_plan:
-                dt += seg['time']
+                tend += seg['time']
 
         seg = self.s_plan[seg_index]
         vhat = seg['vstart'] + seg_time * (seg['vend'] - seg['vstart']) / seg['time']
@@ -259,6 +267,8 @@ class PathPlan():
         s_sum = 0.0
         sprime_sum = 0.0
         v = None
+        omega = None
+        p = None
         for i in range(len(self.path)):
             seg = self.path[i]
             lprime = seg['lprime']
@@ -278,7 +288,7 @@ class PathPlan():
                     omega = math.copysign(v / rho, seg['angle'])
                     arc_angle = seg['angle'] * frac
                     theta = seg['start'][2] + arc_angle
-                    if arc_angle > 0.0:
+                    if seg['angle'] > 0.0:
                         bx = seg['center'][0] + rho * math.sin(theta)
                         by = seg['center'][1] - rho * math.cos(theta)
                     else:
@@ -302,7 +312,7 @@ class PathPlan():
                 omega = 0.0
                 rho = None
             
-        return {'time': dt, 'sprime': sprime, 'vhat': vhat, 'v': v, 'omega': omega, 'rho': rho, 'point': p}
+        return {'time': tend, 'sprime': sprime, 'vhat': vhat, 'v': v, 'omega': omega, 'rho': rho, 'point': p}
 
     def nearestPlanPoint(self, wheel_pose_p):
         # find closest point on plan
@@ -329,40 +339,34 @@ class PathPlan():
                 *nearestPoint,
                 (segment['start'][2] + fraction * (segment['end'][2] - segment['start'][2]))
             )
-            nearests.append((fraction, nearestPoint_p))
+            nearests.append((fraction, nearestPoint_p, segment['kappa']))
 
-        #print(nearests)
         best_distance = None
         best_segment = None
         best_fraction = None
-        nearest_m = None
-        #print(fstr({'wheel_pose_p': wheel_pose_p, 'nearests': nearests}))
+        best_kappa = None
+        best_nearest_p = None
         for i in range(len(nearests)):
-            (fraction, nearestPoint_p) = nearests[i]
-            # nearestPoint_p is where the wheels should be. The dynamic model is the position of the
-            # base in the map frame. Use the nearest point as the origin of a wheels frame, and
-            # determine the location of the robot base.
-            nearestPoint_m = transform2d(nearestPoint_p, self.frame_p, self.frame_m)
-            maybe_nearest_m = transform2d(self.robot_w, nearestPoint_m, self.frame_m)
-            #print(fstr({'maybe_nearest_m': maybe_nearest_m, 'pose_m': pose_m}))
-            d = math.sqrt((maybe_nearest_m[0] - pose_m[0])**2 + (maybe_nearest_m[1] - pose_m[1])**2)
-            #print(d, nearestPoint, pose)
+            (fraction, nearestPoint_p, kappa) = nearests[i]
+            d = math.sqrt((nearestPoint_p[0] - wheel_pose_p[0])**2 + (nearestPoint_p[1] - wheel_pose_p[1])**2)
+            # also account for error in angle, see RKJ 2020-10-09 p 48
+            d += pp.rhohat * (1.0 - cos(nearestPoint_p[2] - wheel_pose_p[2]))
             if best_distance is None or d < best_distance:
-                nearest_m = maybe_nearest_m
+                best_nearest_p = nearestPoint_p
                 best_distance = d
                 best_fraction = fraction
                 best_segment = i
+                best_kappa = kappa
 
         ### determine the speed at that point
         # Since the speed plan is in lprime, we need lprime at the point.
-        sprime_sum = 0.0
+        lprime_sum = 0.0
         lprime = 0.0
         for i in range(len(self.path)):
             seg = self.path[i]
             if i == best_segment:
-                lprime = sprime_sum + best_fraction * seg['lprime']
-            else:
-                sprime_sum += seg['lprime']
+                lprime = lprime_sum + best_fraction * seg['lprime']
+            lprime_sum += seg['lprime']
 
         # get the speed from the speed plan
         vhat = 0.0
@@ -374,14 +378,63 @@ class PathPlan():
                 if vsq > 0.0:
                     vhat = sqrt(vsq)
                 else:
-                    vhat = seg['vstart']
+                    vhat = 0.0
 
-        seg = self.path[best_segment]
-        if 'radius' in seg:
-            speed = vhat * seg['radius'] / (self.rhohat + seg['radius'])
+        return (best_nearest_p, best_distance, vhat, best_kappa, lprime, lprime_sum)
+
+    def controlStep(self, dt, pose_m, twist_r):
+        ### control model
+        # get the wheel plan coordinates given the base coordinates. The base coordinates
+        # are the origin of the robot frame, and we have the wheels position in that frame.
+        self.tt += dt
+        wheel_pose_p = transform2d(self.wheel_r, pose_m, self.frame_p)
+        wheel_pose_m = transform2d(wheel_pose_p, self.frame_p, self.frame_m)
+        #print(fstr({'wheel_r': pp.wheel_r, 'pose_m': pose_m, 'frame_p': pp.frame_p, 'wheel_pose_p': wheel_pose_p}))
+
+        # find closest point on plan
+        (nearest_p, distance, vhat_near, kappa_near, lprime, lprime_sum) = self.nearestPlanPoint(wheel_pose_p)
+
+        # get the orientation of the closest point in wheel coordinates. The wheel frame
+        # is just the location of the wheel point in m frame
+        nearest_w = transform2d(nearest_p, self.frame_p, wheel_pose_m)
+
+        # variables for the control model. See RKJ 2020-10-07 p 47
+        va = twist_r[0]
+        oa = twist_r[2]
+        kappaa = oa / va if va != 0.0 else 0.0
+        vhata = va + abs(self.rhohat * oa)
+        dy_w = -nearest_w[1]
+        psi = -nearest_w[2]
+        psi = (psi + math.pi) % TWOPI - math.pi
+        sinp = sin(psi)
+        dsinpdt = (sinp - self.sinpold) / dt
+        self.sinpold = sinp
+
+        # when we are near the end, use more actual kappa
+        diff = lprime_sum - lprime
+        a_p_ratio = max(0.0 , (self.lpclose - diff) / self.lpclose)
+
+        # when we are near the beginning, rely more on t to determine vhat
+        lp_frac = lprime / lprime_sum
+        n_t_ratio = min(lp_frac / self.lp_start, 1.0)
+        if n_t_ratio < 1.0:
+            vv_tt = self.v(self.tt)
+            vhat_tt = vv_tt['vhat']
+            vhat_plan = n_t_ratio * vhat_near + (1.0 - n_t_ratio) * vhat_tt
         else:
-            speed = vhat
-        return (nearest_m, best_distance, speed)
+            vhat_plan = vhat_near
+
+        kappa_new = a_p_ratio * kappaa + (1.0 - a_p_ratio)* kappa_near -\
+            self.Cp * dy_w - self.Cd * sin(psi) - self.Cj * dsinpdt
+
+        ev = vhata - vhat_plan
+        devdt = (ev - self.evold) / dt
+        self.evold = ev
+        vhat_new = max(0.0, vhat_plan - self.Fp * ev - self.Fd * devdt)
+
+        v_new = vhat_new / (1.0 + abs(self.rhohat * kappa_new))
+        o_new = kappa_new * v_new
+        return (v_new, o_new)
 
 class DynamicStep:
     def __init__(self, lr_model=default_lr_model()):
@@ -417,20 +470,40 @@ class DynamicStep:
 ### MAIN PROGRAM ###
 
 pp = PathPlan(approach_rho=0.20, min_rho=0.05, rhohat=0.2)
-start_x = 0.0
-start_y = 0.0
+start_x = 1.0
+start_y = .5
 start_theta_degrees = 0.0
 start_theta = start_theta_degrees * D_TO_R
-end_theta_degrees = start_theta_degrees + 0.0
+end_theta_degrees = start_theta_degrees + 360.
 end_theta = end_theta_degrees * D_TO_R
-end_x = start_x + 0.20
-end_y = start_y + 0.1
-start_omega = 0.0
-start_vx_r = 0.20
+end_x = start_x + .20
+end_y = start_y + -0.30
+start_omega = 0.5
+start_vx_r = 0.2
 start_vy_r = pp.dwheel * start_omega
 end_vx_r = 0.0
-max_t = 5.0
+over_t = 1.0
 vhatcruise = 0.30
+
+# parameters for the control model. See RKJ 2020-10-07 p 47
+# recommended
+Cd = 250.0
+# .130 is the distance from base to center of rotation
+Cp = Cd / 0.130
+Cj = 16.0
+Fp = 4.0
+Fd = 0.0
+'''
+# testing
+Cd = 250.0
+# .130 is the distance from base to center of rotation
+Cp = Cd / 0.130
+Cj = 16.0
+Fp = 4.0
+Fd = 0.0
+'''
+
+dt = 0.01
 
 # transform base to plan coordinates
 pose1 = Pose()
@@ -449,30 +522,30 @@ for p in path_plan:
 
 vhat0 = start_vx_r
 vhatn = end_vx_r
-s_plan = pp.speedPlan(vhat0, vhatcruise, vhatn, u=0.25)
+s_plan = pp.speedPlan(vhat0, vhatcruise, vhatn, u=0.50)
 print('speed plan:')
 for s in s_plan:
     print(fstr(s))
 
-dt = 0.05
 tt = 0.0
 
 motor = Motor()
 speeds = []
-while tt < max_t:
+while True:
     ss = pp.v(tt)
     ss['lr'] = motor(ss['v'], ss['omega'])
     speeds.append(ss)
-    if tt > ss['time'] + 5 * dt:
+    if tt > ss['time'] + over_t:
         break # at end of plan
     tt += dt
-    print(fstr(ss))
 
 # apply the dynamic model to test accuracy
 dynamicStep = DynamicStep()
 
 # test of control strategy
 tt = 0.0
+evold = 0.0
+sinpold = 0.0
 
 # plot the movement of robot base
 
@@ -480,18 +553,41 @@ pose_m = pp.start_m[:]
 start_vx_m = start_vx_r * cos(start_theta) - start_vy_r * sin(start_theta)
 start_vy_m = start_vx_r * sin(start_theta) + start_vy_r * cos(start_theta)
 twist_m = (start_vx_m, start_vy_m, start_omega)
-(left, right) = speeds[0]['lr']
+(left, right) = speeds[1]['lr']
 (leftOld, rightOld) = motor(start_vx_r, start_omega)
 
 ii = 0
-while tt < max_t:
-    ii += 1
-    if ii >= len(speeds):
-        break
+tees = []
+vas = []
+oas = []
+psis = []
+evs = []
+dys = []
+xr_ms = []
+yr_ms = []
+xw_ms = []
+yw_ms = []
+ls = []
+rs = []
+xn_ms = []
+yn_ms = []
+xp_ms = []
+yp_ms = []
+vns = []
+ons = []
+for ii in range(len(speeds)):
     tt += dt
 
     # dynamic model
     (pose_m, twist_m, twist_r) = dynamicStep(( 0.5 * (left + leftOld), 0.5 * (right + rightOld)), dt, pose_m, twist_m)
+    '''
+    # add some sensor noise
+    pose_m = list(pose_m)
+    twist_r = list(twist_r)
+    for k in range(len(pose_m)):
+        pose_m[k] += random.gauss(0.0, .001)
+        twist_r[k] += random.gauss(0.0, .003)
+    '''
     leftOld = left
     rightOld = right
 
@@ -499,20 +595,157 @@ while tt < max_t:
     # get the wheel plan coordinates given the base coordinates. The base coordinates
     # are the origin of the robot frame, and we have the wheels position in that frame.
     wheel_pose_p = transform2d(pp.wheel_r, pose_m, pp.frame_p)
+    wheel_pose_m = transform2d(wheel_pose_p, pp.frame_p, pp.frame_m)
     #print(fstr({'wheel_r': pp.wheel_r, 'pose_m': pose_m, 'frame_p': pp.frame_p, 'wheel_pose_p': wheel_pose_p}))
 
     # find closest point on plan
-    (nearest_m, distance, speed) = pp.nearestPlanPoint(wheel_pose_p)
+    (nearest_p, distance, vhat_near, kappa_near, lprime, lprime_sum) = pp.nearestPlanPoint(wheel_pose_p)
 
-    (left, right) = speeds[ii]['lr']
-    #TODO: model is motion of wheels, we need to convert to motion of robot base
+    # get the orientation of the closest point in wheel coordinates. The wheel frame
+    # is just the location of the wheel point in m frame
+    nearest_w = transform2d(nearest_p, pp.frame_p, wheel_pose_m)
+
+    # variables for the control model. See RKJ 2020-10-07 p 47
+    va = twist_r[0]
+    oa = twist_r[2]
+    kappaa = oa / va if va != 0.0 else 0.0
+    vhata = va + abs(pp.rhohat * oa)
+    dy_w = -nearest_w[1]
+    psi = -nearest_w[2]
+    psi = (psi + math.pi) % TWOPI - math.pi
+    sinp = sin(psi)
+    dsinpdt = (sinp - sinpold) / dt
+    sinpold = sinp
+
+    # when we are near the end, use more actual kappa
+    diff = lprime_sum - lprime
+    lpclose = 0.05
+    a_p_ratio = max(0.0 , (lpclose - diff) / lpclose)
+
+    # when we are near the beginning, rely more on t to determine vhat
+    lp_frac = lprime / lprime_sum
+    lp_start = 0.5
+    n_t_ratio = min(lp_frac / lp_start, 1.0)
+    if n_t_ratio < 1.0:
+        vv_tt = pp.v(tt)
+        vhat_tt = vv_tt['vhat']
+        vhat_plan = n_t_ratio * vhat_near + (1.0 - n_t_ratio) * vhat_tt
+    else:
+        vhat_plan = vhat_near
+
+    kappa_new = a_p_ratio * kappaa + (1.0 - a_p_ratio)* kappa_near - Cp * dy_w - Cd * sin(psi) - Cj * dsinpdt
+    #kappa_new = kappaa - Cp * dy_w - Cd * sin(psi) - Cj * sinp - Cj * dsinpdt
+
+    ev = vhata - vhat_plan
+    devdt = (ev - evold) / dt
+    evold = ev
+    vhat_new = max(0.0, vhat_plan - Fp * ev - Fd * devdt)
+
+    v_new = vhat_new / (1.0 + abs(pp.rhohat * kappa_new))
+    o_new = kappa_new * v_new
+    (left, right) = motor(v_new, o_new)
+    '''
+    # introduce an error
+    left *= random.gauss(0.95, 0.05)
+    right *= random.gauss(0.9, 0.05)
+    '''
+    #(left, right) = speeds[ii]['lr']
+    # speeds[]['point'] is the progression of the wheels starting at (0.0, 0.0, 0.0), ie in frame_p
+    # get wheels_m
+    plan_w_p = speeds[ii]['point']
+    plan_w_m = transform2d(plan_w_p, pp.frame_p, pp.frame_m)
+    # plan_w_m is also the w frame in the plan. Get robot position in that frame
+    plan_r_m = transform2d(pp.robot_w, plan_w_m, pp.frame_m)
+
+    nearest_m = transform2d(nearest_p, pp.frame_p, pp.frame_m)
+
+    print(' ')
+    '''
+    print(fstr({
+        'ev': ev,
+        'devdt': devdt,
+        'v_old': va,
+        'v_new': v_new,
+        'vhat_near': vhat_near,
+        'vhat_old': vhata,
+        'vhat_new': vhat_new,
+        'o_old': oa,
+        'o_new': o_new,
+        'pfrac': lprime / lprime_sum
+    }))
+    print(fstr({
+        'nearest_w': nearest_w,
+        'nearest_m': nearest_m,
+        'dy_w': dy_w,
+        'kappa_near': kappa_near,
+        'kappaa': kappaa,
+        'kappa_new': kappa_new,
+        'sin(psi)': sin(psi)
+        }))
+
+    print(fstr({
+        'wheel_pose_p': wheel_pose_p,
+        'wheel_r': pp.wheel_r,
+        'pose_m': pose_m,
+        'nearest_m': nearest_m,
+        'nearest_p': nearest_p,
+    }))
+    '''
+
     print(fstr({
         't': tt,
         'd': distance,
         'lr': (left, right),
-        'model_s': pose_m,
-        'plan': speeds[ii]['point'],
-        'nearest': nearest_m,
-        'model_t': twist_r, 
-        'plan_speed': speed}))
+        'dyn_w_m': wheel_pose_m,
+        'plan_w_m': plan_w_m,
+        'dyn_r_m': pose_m,
+        'plan_r_m': plan_r_m,
+        #'model_t': twist_r, 
+        }))
+
+    print(fstr({'y_error': dy_w, 'theta_e_deg': psi / D_TO_R}))
     #print(fstr({'best_fraction': best_fraction, 'best_segment': best_segment}))
+    tees.append(tt)
+    vas.append(va)
+    oas.append(oa)
+    psis.append(sin(psi))
+    evs.append(ev)
+    dys.append(100.0 * dy_w)
+    xr_ms.append(pose_m[0])
+    yr_ms.append(pose_m[1])
+    xw_ms.append(wheel_pose_m[0])
+    yw_ms.append(wheel_pose_m[1])
+    ls.append(left)
+    rs.append(right)
+    xn_ms.append(nearest_m[0])
+    yn_ms.append(nearest_m[1])
+    xp_ms.append(plan_w_m[0])
+    yp_ms.append(plan_w_m[1])
+    vns.append(v_new)
+    ons.append(o_new)
+
+fig = plt.figure(figsize=(6,6))
+
+'''
+plt.plot(tees, vas)
+plt.plot(tees, oas)
+plt.plot(tees, vns)
+plt.plot(tees, ons)
+plt.plot(tees, psis)
+#plt.plot(tees, evs)
+plt.plot(tees, dys)
+#plt.plot(tees, xr_ms)
+#plt.plot(tees, yr_ms)
+#plt.plot(tees, xw_ms)
+#plt.plot(tees, yw_ms)
+plt.plot(tees, ls)
+plt.plot(tees, rs)
+'''
+plt.axis('equal')
+plt.plot(xr_ms, yr_ms)
+plt.plot(xw_ms, yw_ms)
+plt.plot(xn_ms, yn_ms)
+plt.plot(xp_ms, yp_ms)
+'''
+'''
+plt.waitforbuttonpress()
