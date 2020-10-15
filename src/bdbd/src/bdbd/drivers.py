@@ -70,7 +70,7 @@ def main():
                 rospy.logwarn_once('specified speed out of range, must be between {} and {}'.format(-MAX_SPEED, MAX_SPEED))
             left = min(max(-MAX_SPEED, left), MAX_SPEED)
             right = min(max(-MAX_SPEED, right), MAX_SPEED)
-            rospy.logdebug('setting speed to {:5.3f}, {:5.3f}'.format(left, right))
+            rospy.loginfo('setting speed to {:5.3f}, {:5.3f}'.format(left, right))
             # TODO: somehow I got the polarity reversed on the motors
             if abs(left) < .05:
                 left = 0.0

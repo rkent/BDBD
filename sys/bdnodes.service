@@ -1,3 +1,4 @@
+# copy or symlink to /usr/local/lib/systemd/system/bdnodes.service
 [Unit]
 After=NetworkManager.service time-sync.target
 [Service]

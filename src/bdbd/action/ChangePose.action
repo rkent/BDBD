@@ -1,0 +1,20 @@
+# goal definition
+geometry_msgs/Pose startPose
+geometry_msgs/Pose endPose
+geometry_msgs/Twist startTwist
+geometry_msgs/Twist endTwist
+float32 vcruise
+---
+# result definition
+float32 yerror # y error
+float32 terror # angle error
+---
+# feedback definition
+float32 fraction
+float32 dy
+float32 vnew
+float32 onew
+float32 psi
+float32 dhat
+float64 rostime
+float64 tt

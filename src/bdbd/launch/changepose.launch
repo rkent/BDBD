@@ -1,0 +1,3 @@
+<launch>
+    <node name='changepose' pkg='bdbd' type='changepose' ns='bdbd' output='screen'/>
+</launch>

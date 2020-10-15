@@ -39,7 +39,7 @@ class NodeManagement:
         start_behaviors_str = rospy.get_param('/bdbd/behaviors', '')
         rospy.loginfo('Initial behaviors: {}'.format(start_behaviors_str))
 
-        # always start the remove docker service
+        # always start the remote docker service
         mainQueue.put(['launch', 'dockers', 'start', None])
         self.launches.add('dockers')
         for behavior in start_behaviors_str.split():

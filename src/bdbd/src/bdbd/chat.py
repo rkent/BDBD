@@ -53,7 +53,7 @@ def main():
             else:
                 return saying
         except:
-            rospy.logerr('Error from actiion_cb: {}'.format(traceback.format_exc()))
+            rospy.logerr('Error from action_cb: {}'.format(traceback.format_exc()))
         
 
     rospy.init_node('chat')

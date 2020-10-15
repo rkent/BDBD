@@ -8,5 +8,7 @@
     "chat":
         ["drivers", "sayit", "hearit", "speechResponse", "dialogpt:docker", "chat"],
     "chase":
-        ["camera", "detectnet", "drivers", "sayit", "peoplechase"]
+        ["camera", "detectnet", "drivers", "sayit", "peoplechase"],
+    "motion":
+        ["drivers", "t265min", "changepose", "transforms"]
 } 
