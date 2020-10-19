@@ -3,22 +3,22 @@
 import matplotlib.pyplot as plt
 from math import cos, sin
 from bdbd_common.utils import fstr
-from bdbd_common.pathPlan import PathPlan
-from bdbd_common.geometry import D_TO_R, Motor, pose2to3, transform2d, DynamicStep
+from bdbd_common.pathPlan2 import PathPlan
+from bdbd_common.geometry import D_TO_R, Motor, pose2to3, transform2d, DynamicStep, default_lr_model
 
 ### MAIN PROGRAM ###
 
 pp = PathPlan(approach_rho=0.20, min_rho=0.05, rhohat=0.2)
-start_x = 1.0
-start_y = .5
+start_x = 0.0
+start_y = 0.0
 start_theta_degrees = 0.0
 start_theta = start_theta_degrees * D_TO_R
-end_theta_degrees = start_theta_degrees + 360.
+end_theta_degrees = start_theta_degrees + 0.0
 end_theta = end_theta_degrees * D_TO_R
 end_x = start_x + .20
-end_y = start_y + -0.30
-start_omega = 0.5
-start_vx_r = 0.2
+end_y = start_y + .1
+start_omega = 0.0
+start_vx_r = 0.0
 start_vy_r = pp.dwheel * start_omega
 end_vx_r = 0.0
 over_t = 1.0
@@ -55,7 +55,16 @@ while True:
     tt += dt
 
 # apply the dynamic model to test accuracy
-dynamicStep = DynamicStep()
+# add an error in dwheel to the dynamics
+
+factor = 1.0
+lr_model = list(default_lr_model())
+lr_model[1] = list(lr_model[1])
+lr_model[1][0] *= factor
+lr_model[1][1] *= factor
+
+dynamicStep = DynamicStep(lr_model)
+
 
 # test of control strategy
 tt = 0.0
@@ -82,6 +91,8 @@ xr_ms = []
 yr_ms = []
 xw_ms = []
 yw_ms = []
+xpr_ms = []
+ypr_ms = []
 ls = []
 rs = []
 xn_ms = []
@@ -115,16 +126,15 @@ for ii in range(len(speeds)):
     # plan_w_m is also the w frame in the plan. Get robot position in that frame
     plan_r_m = transform2d(pp.robot_w, plan_w_m, pp.frame_m)
 
-    nearest_m = transform2d(pp.nearest_p, pp.frame_p, pp.frame_m)
+    real_wheel_m = transform2d(pp.wheel_r, pose_m, pp.frame_m)
 
     print(' ')
     print(fstr({
         't': tt,
         'lr': (left, right),
-        'ev': pp.ev,
+        'pose_m': pose_m,
         'v_old': pp.va,
         'v_new': v_new,
-        'vhat_near': pp.vhat_near,
         'vhat_old': pp.vhata,
         'vhat_new': pp.vhat_new,
         'o_old': pp.oa,
@@ -161,24 +171,32 @@ for ii in range(len(speeds)):
     '''
 
 
-    print(fstr({'y_error': pp.dy_w, 'theta_e_deg': pp.psi / D_TO_R}))
+    print(fstr({
+        'y_error': pp.dy_r,
+        'psi_e_deg': pp.psi / D_TO_R,
+        'sin(psi)': sin(pp.psi),
+        'dydt': pp.dydt,
+        'dsinpt': pp.dsinpdt,
+        'near_wheel_p': pp.near_wheel_p,
+    }))
     #print(fstr({'best_fraction': best_fraction, 'best_segment': best_segment}))
+    near_wheel_m = transform2d(pp.near_wheel_p, pp.frame_p, pp.frame_m)
     tees.append(tt)
     vas.append(pp.va)
     oas.append(pp.oa)
     psis.append(sin(pp.psi))
     evs.append(pp.ev)
-    dys.append(100.0 * pp.dy_w)
+    dys.append(100.0 * pp.dy_r)
     xr_ms.append(pose_m[0])
     yr_ms.append(pose_m[1])
-    xw_ms.append(pp.wheel_pose_m[0])
-    yw_ms.append(pp.wheel_pose_m[1])
+    xw_ms.append(real_wheel_m[0])
+    yw_ms.append(real_wheel_m[1])
     ls.append(left)
     rs.append(right)
-    xn_ms.append(nearest_m[0])
-    yn_ms.append(nearest_m[1])
     xp_ms.append(plan_w_m[0])
     yp_ms.append(plan_w_m[1])
+    xpr_ms.append(plan_r_m[0])
+    ypr_ms.append(plan_r_m[1])
     vns.append(v_new)
     ons.append(o_new)
 
@@ -200,10 +218,11 @@ plt.plot(tees, ls)
 plt.plot(tees, rs)
 '''
 plt.axis('equal')
+plt.plot(xpr_ms, ypr_ms)
+plt.plot(xp_ms, yp_ms)
 plt.plot(xr_ms, yr_ms)
 plt.plot(xw_ms, yw_ms)
-plt.plot(xn_ms, yn_ms)
-#plt.plot(xp_ms, yp_ms)
+#plt.plot(xn_ms, yn_ms)
 '''
 '''
 plt.waitforbuttonpress()
