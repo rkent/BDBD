@@ -11,7 +11,7 @@ import actionlib
 import math
 from bdbd.msg import ChangePoseFeedback, ChangePoseResult, ChangePoseAction
 from bdbd_common.geometry import pose3to2, D_TO_R, Motor
-from bdbd_common.pathPlan import PathPlan
+from bdbd_common.pathPlan2 import PathPlan
 from bdbd_common.utils import fstr
 from nav_msgs.msg import Odometry
 
@@ -106,27 +106,27 @@ class ChangePose():
             print('tt: {:6.3f} '.format(self.tt) + fstr({
                 'r_m': pasum,
                 't_t': tasum,
-                'w_p': self.pp.wheel_pose_p,
-                'n_p': self.pp.nearest_p,
+                'r_m': pose_m,
+                'nw_p': self.pp.near_wheel_p,
             }))
             print(fstr({
                 'o_n': o_new,
                 'v_n': v_new,
-                'dy': self.pp.dy_w,
+                'dy': self.pp.dy_r * 100.0,
+                'dydt': self.pp.dydt * 100.0,
                 'psi': self.pp.psi / D_TO_R,
                 'oa': self.pp.oa,
                 'va': self.pp.va,
                 'lagms': lag * 1000.,
                 'kn': self.pp.kappa_new,
+                'ka': self.pp.kappaa,
                 'dsinpdt': self.pp.dsinpdt,
                 'vha': self.pp.vhata,
                 'vhn': self.pp.vhat_new,
-                'vhp': self.pp.vhat_plan,
-                'ev': self.pp.va,
-                'kp': self.pp.kappa_near
+                'ev': self.pp.va
             }))
         self._feedback.fraction = self.pp.lp_frac
-        self._feedback.dy = self.pp.dy_w
+        self._feedback.dy = self.pp.dy_r
         self._feedback.vnew = v_new
         self._feedback.onew = o_new
         self._feedback.psi = self.pp.psi
