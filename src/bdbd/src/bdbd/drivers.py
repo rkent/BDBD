@@ -63,6 +63,7 @@ def main():
 
     # raw L/R motor commands (speed, speed)
     def on_cmd_raw(msg):
+        start = time.time()
         try:
             left = msg.left
             right = msg.right
@@ -70,7 +71,6 @@ def main():
                 rospy.logwarn_once('specified speed out of range, must be between {} and {}'.format(-MAX_SPEED, MAX_SPEED))
             left = min(max(-MAX_SPEED, left), MAX_SPEED)
             right = min(max(-MAX_SPEED, right), MAX_SPEED)
-            rospy.loginfo('setting speed to {:5.3f}, {:5.3f}'.format(left, right))
             # TODO: somehow I got the polarity reversed on the motors
             if abs(left) < .05:
                 left = 0.0
@@ -78,6 +78,7 @@ def main():
                 right = 0.0
             set_speed(motor_left_ID,  -left)
             set_speed(motor_right_ID, -right)
+            rospy.loginfo('set speed to {:5.3f}, {:5.3f} ms: {:6.3f} time {:15.3f}'.format(left, right, (time.time() - start) * 1000., rospy.get_time()))
         except:
             rospy.logerr(traceback.format_exc)
 
@@ -202,16 +203,16 @@ def main():
     rospy.init_node('drivers')
 
     ### Motors
-    rospy.Subscriber('motors/cmd_dir', String, on_cmd_dir)
-    rospy.Subscriber('motors/cmd_raw', MotorsRaw, on_cmd_raw)
-    rospy.Subscriber('motors/cmd_str', String, on_cmd_str)
+    rospy.Subscriber('motors/cmd_dir', String, on_cmd_dir, tcp_nodelay=True)
+    rospy.Subscriber('motors/cmd_raw', MotorsRaw, on_cmd_raw, queue_size=1, tcp_nodelay=True)
+    rospy.Subscriber('motors/cmd_str', String, on_cmd_str, tcp_nodelay=True)
 
     ### Pan/Tilt
-    rospy.Subscriber('pantilt', PanTilt, on_pantilt)
+    rospy.Subscriber('pantilt', PanTilt, on_pantilt, tcp_nodelay=True)
     rospy.Timer(rospy.Duration(0.1), pantilt_tf_cb)
 
     ### pixel ring
-    rospy.Subscriber('pixelring', String, on_pixelring)
+    rospy.Subscriber('pixelring', String, on_pixelring, tcp_nodelay=True)
 
     # start running
     try:

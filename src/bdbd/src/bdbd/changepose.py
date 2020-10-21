@@ -8,6 +8,7 @@ import os
 import time
 import rospy
 import actionlib
+import traceback
 import math
 from bdbd.msg import ChangePoseFeedback, ChangePoseResult, ChangePoseAction
 from bdbd_common.geometry import pose3to2, D_TO_R, Motor
@@ -24,9 +25,7 @@ class ChangePose():
         self._actionServer.register_preempt_callback(self.preempt_cb)
         self._actionServer.start()
         self._motor = Motor()
-        self.last_time = None
-        self.ros_start = None
-        self.sys_start = None
+        self.count = 0
         self.skip = 4
         self.psum = [0.0, 0.0, 0.0]
         self.tsum = [0.0, 0.0, 0.0]
@@ -34,6 +33,7 @@ class ChangePose():
 
     def preempt_cb(self):
         print('preempted')
+        traceback.print_stack()
         if hasattr(self, 'odom_sub'):
             self.odom_sub.unregister()
         return
@@ -61,21 +61,18 @@ class ChangePose():
             rospy.loginfo(fstr(seg))
 
         # start executing the action, driven by odometry message receipt
-        self.odom_sub = rospy.Subscriber('/t265/odom/sample', Odometry, self.odom_cb)
+        self.odom_sub = rospy.Subscriber('/t265/odom/sample', Odometry, self.odom_cb, tcp_nodelay=True)
 
     def odom_cb(self, odometry):
-        now = float(odometry.header.stamp.secs + 1.0e-9 * odometry.header.stamp.nsecs)
-        nsteps = 10000
-        if self.last_time is None:
-            self.last_time = now
-            self.count = 0
-            self.ros_start = now
-            self.sys_start = time.time()
-            return
+        then = float(odometry.header.stamp.secs + 1.0e-9 * odometry.header.stamp.nsecs)
 
         pose_m = pose3to2(odometry.pose.pose)
         twist3 = odometry.twist.twist
         twist_r = (twist3.linear.x, twist3.linear.y, twist3.angular.z)
+
+        if self.last_time is None:
+            self.last_time = then
+            return
 
         self.count += 1
 
@@ -94,10 +91,10 @@ class ChangePose():
 
         self.psum = [0.0, 0.0, 0.0]
         self.tsum = [0.0, 0.0, 0.0]
-        dt = now - self.last_time
+        dt = then - self.last_time
         self.tt += dt
-        self.last_time = now
-        lag = (time.time() - self.sys_start) - (now - self.ros_start)
+        self.last_time = then
+        lag = rospy.get_time() - then
 
         (v_new, o_new) = self.pp.controlStep(dt, pasum, tasum)
         #if self.count % 5 == 0:
@@ -105,10 +102,10 @@ class ChangePose():
             print(' ')
             print('tt: {:6.3f} '.format(self.tt) + fstr({
                 'r_m': pasum,
+                'nr_m': self.pp.near_robot_m,
                 't_t': tasum,
-                'r_m': pose_m,
                 'nw_p': self.pp.near_wheel_p,
-            }))
+            }, '8.5f'))
             print(fstr({
                 'o_n': o_new,
                 'v_n': v_new,
@@ -123,6 +120,7 @@ class ChangePose():
                 'dsinpdt': self.pp.dsinpdt,
                 'vha': self.pp.vhata,
                 'vhn': self.pp.vhat_new,
+                'vhp': self.pp.vhat_plan,
                 'ev': self.pp.va
             }))
         self._feedback.fraction = self.pp.lp_frac
@@ -130,7 +128,7 @@ class ChangePose():
         self._feedback.vnew = v_new
         self._feedback.onew = o_new
         self._feedback.psi = self.pp.psi
-        self._feedback.rostime = now
+        self._feedback.rostime = then
         self._feedback.tt = self.tt
 
         # calculate the dhat error to the target pose, dhat adding an angle error addition to distance
@@ -140,10 +138,12 @@ class ChangePose():
 
         self._actionServer.publish_feedback(self._feedback)
 
-        if v_new < 0.01 and self.pp.lp_frac > 0.90 and self._actionServer.is_active():
+        if abs(v_new) < 1.e-3 and self.pp.lp_frac > 0.999 and self._actionServer.is_active():
+            print(fstr({'v_new': v_new, 'lp_frac': self.pp.lp_frac}))
             self.finish()
 
     def finish(self):
+        print('finish called')
         if hasattr(self, 'odom_sub'):
             self.odom_sub.unregister()
 

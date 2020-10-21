@@ -16,16 +16,11 @@ class ChangePoseClient:
         self.current_odom = None
         self.motor = Motor()
         self.fcount = 0
-        self.sys_start = None
-        self.ros_start = None
 
     def feedback_cb(self,f):
         self.fcount += 1
-        if self.sys_start is None:
-            self.sys_start = time.time()
-            self.ros_start = f.rostime
         (left, right) = self.motor(f.vnew, f.onew)
-        lag = (time.time() - self.sys_start) - (f.rostime - self.ros_start)
+        lag = rospy.get_time() - f.rostime
         self.motor_pub.publish(left, right)
         pose_m = pose3to2(self.current_odom.pose.pose)
         #if self.fcount % 5 == 0:
@@ -34,12 +29,14 @@ class ChangePoseClient:
             'onew': f.onew,
             'left': left,
             'right': right,
-            'psi': f.psi / D_TO_R,
+            'psi deg': f.psi / D_TO_R,
             'fraction': f.fraction,
             'dy': f.dy,
             'pose_m': pose_m,
-            'lagms': lag * 1000.
+            'lagms': lag * 1000.,
+            #'feedback time': time.time() - start
         }))
+        #print('rostime: {:15.3f}'.format(rospy.get_time()))
         return
 
     def odom_cb(self, odometry):
@@ -52,9 +49,10 @@ class ChangePoseClient:
         print('after waiting')
         self.odom_sub.unregister()
         print('after unregister')
+        self.motor_pub.publish(0.0, 0.0)
         return
 
-    def __call__(self, dx, dy, dphid, vcruise):
+    def __call__(self, dx, dy, dphi, vcruise):
         print('changePoseClient')
         self.odom_sub = rospy.Subscriber('/t265/odom/sample', Odometry, self.odom_cb)
         # wait for messages
@@ -65,9 +63,10 @@ class ChangePoseClient:
         sp = self.current_odom.pose.pose
         st = self.current_odom.twist.twist
         start_m = pose3to2(sp)
-        end_m = (start_m[0] + dx, start_m[1] + dy, start_m[2] + dphid * D_TO_R)
+        end_m = (start_m[0] + dx, start_m[1] + dy, start_m[2] + dphi)
         ep = pose2to3(end_m)
         et = Twist()
+        print('start pose: ' + fstr(pose3to2(sp)) + ' end pose: ' + fstr(pose3to2(ep)))
         goal = ChangePoseGoal(sp, ep, st, et, vcruise)
         self.client.send_goal(goal, feedback_cb=self.feedback_cb, done_cb=self.done_cb)
         print('waiting for result')
@@ -75,16 +74,20 @@ class ChangePoseClient:
 if __name__ == '__main__':
     changePoseClient = ChangePoseClient()
     rospy.init_node('test_changepose')
-    changePoseClient(.2, .1, 0.0, .3)
+    changePoseClient(.4, .1, 30.0 * D_TO_R, .30)
     while (not rospy.is_shutdown()):
         try:
-            time.sleep(4.0)
+            time.sleep(10.0)
             if changePoseClient.client.get_state() == GoalStatus.ACTIVE:
+                print('cancelling')
                 changePoseClient.client.cancel_goal()
             print('status: {}'.format(changePoseClient.client.get_state()))
             changePoseClient.motor_pub.publish(0.0, 0.0)
+            exit(0)
             #print('Result: {}'.format(fstr(result)))
             #print("program interrupted before completion")
+        except SystemExit:
+            pass
         except:
             print('Other error')
             print(sys.exc_info())
