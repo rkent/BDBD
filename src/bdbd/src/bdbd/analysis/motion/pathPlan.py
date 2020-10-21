@@ -135,12 +135,14 @@ for ii in range(len(speeds)):
         'pose_m': pose_m,
         'v_old': pp.va,
         'v_new': v_new,
-        'vhat_old': pp.vhata,
+        #'vhat_old': pp.vhata,
         'vhat_new': pp.vhat_new,
         'o_old': pp.oa,
         'o_new': o_new,
-        'kappaa': pp.kappaa,
-        'kappa_new': pp.kappa_new,
+        'k_a': pp.kappaa,
+        'k_n': pp.kappa_new,
+        'k_c': pp.kappa_combo,
+        'k_p': pp.kappa_plan
     }))
     '''
     print(fstr({
