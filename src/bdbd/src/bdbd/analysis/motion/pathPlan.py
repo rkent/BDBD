@@ -11,18 +11,23 @@ from bdbd_common.geometry import D_TO_R, Motor, pose2to3, transform2d, DynamicSt
 pp = PathPlan(approach_rho=0.20, min_rho=0.05, rhohat=0.2)
 start_x = 0.0
 start_y = 0.0
-start_theta_degrees = 0.0
-start_theta = start_theta_degrees * D_TO_R
-end_theta_degrees = start_theta_degrees + 0.0
+start_theta = 0.0
+start_vx = 0.0
+start_vy = 0.0
+start_omega = 0.0
+
+#start_theta_degrees = 0.0
+#start_theta = start_theta_degrees * D_TO_R
+end_theta_degrees = 30.0
 end_theta = end_theta_degrees * D_TO_R
-end_x = start_x + .20
-end_y = start_y + .1
+end_x = .4
+end_y = .1
 start_omega = 0.0
 start_vx_r = 0.0
 start_vy_r = pp.dwheel * start_omega
 end_vx_r = 0.0
 over_t = 1.0
-vhatcruise = 0.30
+vhatcruise = 0.25
 
 dt = 0.02
 
@@ -131,19 +136,22 @@ for ii in range(len(speeds)):
     print(' ')
     print(fstr({
         't': tt,
-        'lr': (left, right),
-        'pose_m': pose_m,
-        'v_old': pp.va,
+        'va': pp.va,
         'v_new': v_new,
-        #'vhat_old': pp.vhata,
+        'vhat_a': pp.vhata,
         'vhat_new': pp.vhat_new,
-        'o_old': pp.oa,
+        'vhat_plan': pp.vhat_plan,
+        'oa': pp.oa,
         'o_new': o_new,
         'k_a': pp.kappaa,
         'k_n': pp.kappa_new,
         'k_c': pp.kappa_combo,
-        'k_p': pp.kappa_plan
     }))
+    print(fstr({
+        'pose_m': pose_m,
+        'twist_m': twist_m,
+        'twist_r': twist_r
+    }, '8.5f'))
     '''
     print(fstr({
         'nearest_w': nearest_w,
@@ -175,11 +183,14 @@ for ii in range(len(speeds)):
 
     print(fstr({
         'y_error': pp.dy_r,
+        'lr': (left, right),
+        'k_p': pp.kappa_plan,
         'psi_e_deg': pp.psi / D_TO_R,
+        'pose_m': pose_m,
         'sin(psi)': sin(pp.psi),
         'dydt': pp.dydt,
         'dsinpt': pp.dsinpdt,
-        'near_wheel_p': pp.near_wheel_p,
+        'twist_r': twist_r,
     }))
     #print(fstr({'best_fraction': best_fraction, 'best_segment': best_segment}))
     near_wheel_m = transform2d(pp.near_wheel_p, pp.frame_p, pp.frame_m)
@@ -204,20 +215,21 @@ for ii in range(len(speeds)):
 
 fig = plt.figure(figsize=(6,6))
 
-'''
 plt.plot(tees, vas)
-plt.plot(tees, oas)
 plt.plot(tees, vns)
+plt.plot(tees, evs)
+plt.plot(tees, ls)
+plt.plot(tees, rs)
+plt.plot(tees, oas)
+'''
 plt.plot(tees, ons)
 plt.plot(tees, psis)
-#plt.plot(tees, evs)
 plt.plot(tees, dys)
 #plt.plot(tees, xr_ms)
 #plt.plot(tees, yr_ms)
 #plt.plot(tees, xw_ms)
 #plt.plot(tees, yw_ms)
-plt.plot(tees, ls)
-plt.plot(tees, rs)
+'''
 '''
 plt.axis('equal')
 plt.plot(xpr_ms, ypr_ms)
@@ -225,6 +237,5 @@ plt.plot(xp_ms, yp_ms)
 plt.plot(xr_ms, yr_ms)
 plt.plot(xw_ms, yw_ms)
 #plt.plot(xn_ms, yn_ms)
-'''
 '''
 plt.waitforbuttonpress()
