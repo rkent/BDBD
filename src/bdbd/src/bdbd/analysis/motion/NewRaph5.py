@@ -7,7 +7,7 @@ from bdbd_common.utils import fstr, gstr
 from bdbd_common.geometry import lr_est, default_lr_model, D_TO_R
 
 def estr(a):
-    return fstr(a, fmat='6.4f', n_per_line=10)
+    return fstr(a, fmat='10.7g', n_per_line=10)
 
 class NewRaph():
     def __init__(self, n, dt, lr_model=default_lr_model()):
@@ -48,7 +48,8 @@ class NewRaph():
 
     def poses(self, ls, rs,
         start_pose=(0.0, 0.0, 0.0),
-        start_twist=(0.0, 0.0, 0.0)
+        start_twist=(0.0, 0.0, 0.0),
+        details=False
     ):
         als = np.asarray(ls)
         ars = np.asarray(rs)
@@ -66,7 +67,7 @@ class NewRaph():
         alphayj = self.alphayj
         alphaoj = self.alphaoj
 
-        # initial world velocities
+        # initial robot velocities
         vx0 = vxw0 * math.cos(theta0) + vyw0 * math.cos(theta0)
         vy0 = -vxw0 * math.sin(theta0) + vyw0 * math.cos(theta0)
 
@@ -85,6 +86,9 @@ class NewRaph():
             vyj[i] = vy0 * alphayj[i] + np.dot(alphayj[i-1::-1], bmotoryj[1:i+1])
             omegaj[i] = omega0 * alphaoj[i] + np.dot(alphaoj[i-1::-1], bmotoroj[1:i+1])
 
+        if details:
+            print(estr({'alphaoj[n-2::-1]': alphaoj[n-2::-1]}))
+            print(estr({'bmotoroj[1:n]': bmotoroj[1:n]}))
         # pose
         pxj = np.empty(n)
         pyj = np.empty(n)
@@ -295,7 +299,15 @@ class NewRaph():
         self.Wmax = Wmax
         self.Wjerk = Wjerk
         self.mmax = mmax
+        return self.reloss()
 
+    def reloss(self, details=False):
+        target_pose = self.target_pose
+        target_twist = self.target_twist
+        target_lr = self.target_lr
+        Wmax = self.Wmax
+        Wjerk = self.Wjerk
+        mmax = self.mmax
         # given pose calculations, determine the loss
         vxj = self.vxj
         vyj = self.vyj
@@ -328,12 +340,14 @@ class NewRaph():
             , rights[-1]
         ])
         targets = np.concatenate([target_pose, target_twist, target_lr])
-        #targets = np.concatenate([target_pose, target_twist])
+        #targets = np.concatenate([target_pose, target_twist[:1], target_lr])
         sumTargets = 0.5 * np.square(vals - targets).sum()
         loss = sumMax + sumJerk + sumTargets
-        print(fstr({'sumMax': sumMax, 'sumJerk': sumJerk, 'sumTargets': sumTargets}, fmat='12.9f'))
-        print(estr(vals))
-        print(estr(targets))
+        if details:
+            print('target losses: ' + estr(0.5 * np.square(vals - targets)))
+            print(estr({'loss': loss, 'sumMax': sumMax, 'sumJerk': sumJerk, 'sumTargets': sumTargets}))
+            print(fstr({'vals': vals}, fmat='15.12g'))
+            print(fstr({'targets': targets}))
         self.lossValue = loss
         return loss
 
@@ -376,30 +390,215 @@ class NewRaph():
 
         for k in range(1, n):
             dlefts[k] = (
-                +(vxj[-1] - vxt) * bhxl * alphaxj[n-k]
-                +(vyj[-1] - vyt) * bhyl * alphayj[n-k]
-                +(omegaj[-1] - omegat) * bhol * alphaoj[n-k]
-                +(thetaj[-1] - thetat) * bhol * betaj[n-k]
+                +(vxj[-1] - vxt) * bhxl * alphaxj[n-1-k]
+                +(vyj[-1] - vyt) * bhyl * alphayj[n-1-k]
+                +(omegaj[-1] - omegat) * bhol * alphaoj[n-1-k]
+                +(thetaj[-1] - thetat) * bhol * betaj[n-1-k]
                 +(pxj[-1] - pxt) * dpxdl[-1, k]
                 +(pyj[-1] - pyt) * dpydl[-1, k]
                 +Wmax * leftsp9[k] / mmax
                 +Wjerk * (2 * lefts[k] -lefts[k-1] -lefts[min(k+1, n-1)])
             )
             drights[k] = (
-                +(vxj[-1] - vxt) * bhxr * alphaxj[n-k]
-                +(vyj[-1] - vyt) * bhyr * alphayj[n-k]
-                +(omegaj[-1] - omegat) * bhor * alphaoj[n-k]
-                +(thetaj[-1] - thetat) * bhor * betaj[n-k]
+                +(vxj[-1] - vxt) * bhxr * alphaxj[n-1-k]
+                +(vyj[-1] - vyt) * bhyr * alphayj[n-1-k]
+                +(omegaj[-1] - omegat) * bhor * alphaoj[n-1-k]
+                +(thetaj[-1] - thetat) * bhor * betaj[n-1-k]
                 +(pxj[-1] - pxt) * dpxdr[-1, k]
                 +(pyj[-1] - pyt) * dpydr[-1, k]
                 +Wmax * rightsp9[k]
                 +Wjerk * (2 * rights[k] -rights[k-1] -rights[min(k+1, n-1)])
             )
-            dlefts[-1] += (lefts[-1] - leftt)
-            drights[-1] += (rights[-1] - rightt)
+        # TODO: check this
+        dlefts[-1] += (lefts[-1] - leftt)
+        drights[-1] += (rights[-1] - rightt)
         self.dlefts = dlefts
         self.drights = drights
         return (dlefts, drights)
+
+    def hessian(self):
+        # second derivative of the loss function
+        pxj = self.pxj
+        pyj = self.pyj
+        (pxt, pyt, _) = self.target_pose
+        dpxdl = self.dpxdl
+        dpydl = self.dpydl
+        dpxdr = self.dpxdr
+        dpydr = self.dpydr
+        (bhxl, bhxr, _) = self.bhes[0]
+        (bhyl, bhyr, _) = self.bhes[1]
+        (bhol, bhor, _) = self.bhes[2]
+        alphaxj = self.alphaxj
+        alphayj = self.alphayj
+        alphaoj = self.alphaoj
+        betaj = self.betaj
+
+        Wmax = self.Wmax
+        Wjerk = self.Wjerk
+        mmax = self.mmax
+
+        lefts = self.als
+        rights = self.ars
+        d2pxdldl = self.d2pxdldl
+        d2pxdldr = self.d2pxdldr
+        d2pxdrdr = self.d2pxdrdr
+        d2pydldl = self.d2pydldl
+        d2pydldr = self.d2pydldr
+        d2pydrdr = self.d2pydrdr
+        n = len(lefts) - 1
+
+        # We'll define this as 0 -> n-1 are lefts[1:], n -> 2n-1 are rights[1:]
+        hess = np.empty([2*n, 2*n])
+
+        # values that vary with each k, m value
+        deltapxn = pxj[-1] - pxt
+        deltapyn = pyj[-1] - pyt
+        for i in range(0, 2*n):
+            k = i % n + 1
+
+            kleft = (i < n)
+            if kleft:
+                dpxdu = dpxdl[n, k]
+                dpydu = dpydl[n, k]
+                dvxdu = alphaxj[n-k] * bhxl
+                dvydu = alphayj[n-k] * bhyl
+                domdu = alphaoj[n-k] * bhol
+                dthdu = betaj[n-k] * bhol
+            else:
+                dpxdu = dpxdr[n, k]
+                dpydu = dpydr[n, k]
+                dvxdu = alphaxj[n-k] * bhxr
+                dvydu = alphayj[n-k] * bhyr
+                domdu = alphaoj[n-k] * bhor
+                dthdu = betaj[n-k] * bhor
+
+            for j in range(0, 2*n):
+                m = j % n + 1
+                mleft = (j < n)
+                if mleft:
+                    dpxds = dpxdl[n, m]
+                    dpyds = dpydl[n, m]
+                    dvxds = alphaxj[n-m] * bhxl
+                    dvyds = alphayj[n-m] * bhyl
+                    domds = alphaoj[n-m] * bhol
+                    dthds = betaj[n-m] * bhol
+                    
+                    if kleft:
+                        d2px = d2pxdldl[n, k, m]
+                        d2py = d2pydldl[n, k, m]
+                    else:
+                        # note d2pxdrdl[i,j] = d2pxdldr[j,i]
+                        d2px = d2pxdldr[n, m, k]
+                        d2py = d2pydldr[n, m, k]
+                else:
+                    dpxds = dpxdr[n, m]
+                    dpyds = dpydr[n, m]
+                    dvxds = alphaxj[n-m] * bhxr
+                    dvyds = alphayj[n-m] * bhyr
+                    domds = alphaoj[n-m] * bhor
+                    dthds = betaj[n-m] * bhor
+                    if kleft:
+                        d2px = d2pxdldr[n, k, m]
+                        d2py = d2pydldr[n, k, m]
+                    else:
+                        d2px = d2pxdrdr[n, k, m]
+                        d2py = d2pydrdr[n, k, m]
+                hess[i, j] = (
+                    deltapxn * d2px + dpxdu * dpxds +
+                    deltapyn * d2py + dpydu * dpyds +
+                    dvxdu * dvxds + dvydu * dvyds + domdu * domds + dthdu * dthds
+                )
+
+        # values that require k == m
+        for i in range(0, 2*n):
+            k = i % n + 1
+            kleft = (i < n)
+            # max term
+            hess[i, i] += (Wmax / mmax**2) * (lefts[k]**8 if kleft else rights[k]**8)
+            # motor target value
+            if k == n:
+                hess[i, i] += 1.0
+            # jerk term
+            hess[i, i] += 2 *Wjerk
+            if k > 1:
+                hess[i, i-1] -= Wjerk
+            if k == n:
+                hess[i, i] -= Wjerk
+            else:
+                hess[i, i+1] -= Wjerk
+        
+        self.hess = hess
+        return hess
+
+    def dloss_dleft(self, j, eps=1.e-3):
+        # numerical estimate of loss derivative at left[j]
+        base_als = self.als.copy()
+
+        lefts = base_als.copy()
+        lefts[j] += eps
+        nr.poses(lefts, self.ars)
+        loss_plus = nr.reloss()
+
+        lefts = base_als.copy()
+        lefts[j] -= eps
+        nr.poses(lefts, self.ars)
+        loss_minus = nr.reloss()
+        self.als = base_als
+
+        dloss = 0.5 * (loss_plus - loss_minus) / eps
+        return dloss
+
+    def d2loss_dl_dl(self, k, eps=0.0001):
+        # numerical estimate of second derivative of loss  dl dl
+        base_als = self.als.copy()
+        n = len(self.als)
+
+        d2lossj = [0.0]
+        for j in range(1, n):
+            lefts = base_als.copy()
+            lefts[k] += eps
+            self.als = lefts
+            #dlossp = self.dloss_dleft(j, eps)
+            nr.poses(lefts, self.ars)
+            nr.gradients()
+            nr.jacobian()
+            dlossp = self.dlefts[j]
+            pxp = self.pxj[-1]
+
+            lefts = base_als.copy()
+            lefts[k] -= eps
+            self.als = lefts
+            #dlossm = self.dloss_dleft(j, eps)
+            nr.poses(lefts, self.ars)
+            nr.gradients()
+            nr.jacobian()
+            dlossm = self.dlefts[j]
+            pxm = self.pxj[-1]
+            d2lossj.append(0.5 * (dlossp - dlossm) / eps)
+            #print(estr({'pxp': pxp, 'pxm': pxm, 'pxp - pxm': pxp - pxm}))
+            print(estr(({'dlossp': dlossp, 'dlossm': dlossm, 'dlossp-dlossm': dlossp-dlossm, 'wjerk': self.Wjerk})))
+        self.als = base_als
+
+        return d2lossj
+    
+    def dloss_dright(self, j, eps=0.0001):
+        # numerical estimate of loss derivative at left[j]
+        base_ars = self.ars.copy()
+
+        rights = base_ars.copy()
+        rights[j] += eps
+        nr.poses(self.als, rights)
+        loss_plus = nr.reloss()
+
+        rights = base_ars.copy()
+        rights[j] -= eps
+        nr.poses(self.als, rights)
+        loss_minus = nr.reloss()
+        self.ars = base_ars
+
+        dloss = 0.5 * (loss_plus - loss_minus) / eps
+
+        return dloss
 
 if __name__ == '__main__':
     from bdbd_common.pathPlan2 import PathPlan
@@ -414,10 +613,16 @@ if __name__ == '__main__':
     #lr_model = ((1.0, 1.0, 10.0), (-1.0, 1.0, 10.0), (-1.0, 10.0, 10.0))
     start_pose = [0.0, 0.0, 0.0]
     start_twist = [0.0, 0.0, 0.0]
-    target_pose = [0.1, 0.005, 0.0]
+    target_pose = [0.10, 0.05, 0.0]
     target_twist = [0.0, 0.0, 0.0]
     cruise_v = 0.3
     lr_start = (0.0, 0.0)
+    gauss_iters = 1
+    nr_iters = 100
+    Wmax = 1.e-3
+    Wjerk = 1.e-4
+    NRstart = 0.01
+    NRfact = 1.1
 
     pp = PathPlan()
     pathPlan = pp.start2(start_pose, target_pose)
@@ -467,6 +672,9 @@ if __name__ == '__main__':
     for seg in vvs:
         print(estr(seg))
 
+    #lefts = lefts[:10]
+    #rights = rights[:10]
+    #tees = tees[:10]
     n = len(lefts)
     nr = NewRaph(n, dt, lr_model)
     # gradient descent iteration
@@ -476,7 +684,8 @@ if __name__ == '__main__':
     last_rights = None
     last_dlefts = None
     last_drights = None
-    for count in range(100):
+
+    for count in range(gauss_iters + nr_iters):
         start = time.time()
         (pxj, pyj, thetaj, vxj, vyj, omegaj) = nr.poses(lefts, rights,
             start_pose=start_pose, start_twist=start_twist)
@@ -484,19 +693,21 @@ if __name__ == '__main__':
 
         start = time.time()
         (dpxdl, dpxdr, dpydl, dpydr) = nr.gradients()
+        (d2pxdldl, d2pxdldr, d2pxdrdr, d2pydldl, d2pydldr, d2pydrdr) = nr.seconds()
         #print('gradients time:', time.time() - start)
         #print(len(lefts), len(dpxdl))
 
         start = time.time()
-        loss = nr.loss(mmax=1.0, target_pose=target_pose, Wmax=1.0e-5, Wjerk=.005)
+        loss = nr.loss(mmax=1.0, target_pose=target_pose, Wmax=Wmax, Wjerk=Wjerk)
         #print('loss time:', time.time() - start)
         #print('loss:', loss)
 
         start = time.time()
         (dlefts, drights) = nr.jacobian()
+        hess = nr.hessian()
         #print('jacobian time:', time.time() - start)
-        #print('dlefts:' + estr(dlefts))
-        #print('drights:' + estr(drights))
+
+
         '''
         start = time.time()
         (d2pxdldl, d2pxdldr, d2pxdrdr, d2pydldl, d2pydldr, d2pydrdr) = nr.seconds()
@@ -530,25 +741,40 @@ if __name__ == '__main__':
             axis2 = plt2.axis()
 
         # update lefts, rights
-        print(fstr({'eps': eps, 'loss': loss, 'last_loss': last_loss,
+        print(fstr({'count': count, 'eps': eps, 'loss': loss, 'last_loss': last_loss,
             'lmax': np.amax(lefts), 'rmax': np.amax(rights)}, fmat='15.12f'))
         if loss < last_loss or last_lefts is None:
             last_loss = loss
-            last_lefts = lefts[:]
-            last_rights = rights[:]
-            last_dlefts = dlefts[:]
-            last_drights = drights[:]
-            for i in range(1, n):
-                lefts[i] -= eps*dlefts[i]
-                rights[i] -= eps*drights[i]
-            eps *= 1.1
-            #eps = min(eps, 0.50)
+            last_lefts = lefts.copy()
+            last_rights = rights.copy()
+            last_dlefts = dlefts.copy()
+            last_drights = drights.copy()
+            # gradient descent
+            if count < gauss_iters:
+                for i in range(1, n):
+                    lefts[i] -= eps*dlefts[i]
+                    rights[i] -= eps*drights[i]
+                eps *= 1.1
+            else:
+                if count == gauss_iters:
+                    eps = NRstart
+                print('Using Newton-Raphson!')
+                b = np.concatenate([-nr.dlefts[1:], -nr.drights[1:]])
+                deltax = np.linalg.solve(nr.hess, b)
+                nhess = len(lefts) - 1
+                lefts[1:] += eps * deltax[:nhess]
+                rights[1:] += eps * deltax[nhess:]
+                eps = min(1.0, NRfact*eps)
+                print('deltax:' + estr(deltax))
+
         else:
-            eps *= 0.5
+            eps *= .5 / NRfact
             for i in range(1, n):
                 lefts[i] = last_lefts[i] - eps * last_dlefts[i]
                 rights[i] = last_rights[i] - eps * last_drights[i]
             
+        #print('lefts:' + estr(lefts))
+        #print('rights:' + estr(rights))
     plt.waitforbuttonpress()
     print('pxj:' + estr(pxj))
     print('pyj:' + estr(pyj))
@@ -558,83 +784,107 @@ if __name__ == '__main__':
     print('omegaj:' + estr(omegaj))
     print('lefts:' + estr(lefts))
     print('rights:' + estr(rights))
+    #print('dlefts:' + fstr(dlefts, fmat='18.15g', n_per_line=10))
+    #print('drights:' + fstr(drights, fmat='18.15g', n_per_line=10))
+    #print('hessian:' + fstr(nr.hess, fmat='18.15g', n_per_line=10))
 
-    print('dpxdl:' + gstr(nr.dpxdl, fmat='25.22f', n_per_line=18))
-    print('dpxdr:' + gstr(nr.dpxdr, fmat='25.22f', n_per_line=18))
-    print('dpydl:' + gstr(nr.dpydl, fmat='25.22f', n_per_line=18))
-    print('dpydr:' + gstr(nr.dpydr, fmat='25.22f', n_per_line=18))
-    print('d2pxdldl' + gstr(nr.d2pxdldl, fmat='25.22f', n_per_line=18))
-    print('d2pxdldr' + gstr(nr.d2pxdldr, fmat='25.22f', n_per_line=18))
-    print('d2pxdrdr' + gstr(nr.d2pxdrdr, fmat='25.22f', n_per_line=18))
-    print('d2pydldl' + gstr(nr.d2pydldl, fmat='25.22f', n_per_line=18))
-    print('d2pydldr' + gstr(nr.d2pydldr, fmat='25.22f', n_per_line=18))
-    print('d2prdrdr' + gstr(nr.d2pydrdr, fmat='25.22f', n_per_line=18))
-    print('sin(theta):' + fstr(np.sin(thetaj), fmat='25.22f'))
-    print('cos(theta):' + fstr(np.cos(thetaj), fmat='25.22f'))
-    print('vxw:' + fstr(vxj * np.cos(thetaj) - vyj * np.sin(thetaj), fmat='25.22f'))
-    print('vyw:' + fstr(vxj * np.sin(thetaj) + vyj * np.cos(thetaj), fmat='25.22f'))
+    '''
+    print('dpxdl:' + gstr(nr.dpxdl, fmat='18.15f', n_per_line=10))
+    print('dpxdr:' + gstr(nr.dpxdr, fmat='18.15f', n_per_line=10))
+    print('dpydl:' + gstr(nr.dpydl, fmat='18.15f', n_per_line=10))
+    print('dpydr:' + gstr(nr.dpydr, fmat='18.15f', n_per_line=10))
+    print('d2pxdldl' + gstr(nr.d2pxdldl, fmat='18.15f', n_per_line=10))
+    print('d2pxdldr' + gstr(nr.d2pxdldr, fmat='18.15f', n_per_line=10))
+    print('d2pxdrdr' + gstr(nr.d2pxdrdr, fmat='18.15f', n_per_line=10))
+    print('d2pydldl' + gstr(nr.d2pydldl, fmat='18.15f', n_per_line=10))
+    print('d2pydldr' + gstr(nr.d2pydldr, fmat='18.15f', n_per_line=10))
+    print('d2prdrdr' + gstr(nr.d2pydrdr, fmat='18.15f', n_per_line=10))
+    print('sin(theta):' + fstr(np.sin(thetaj),fmat='18.15f', n_per_line=10))
+    print('cos(theta):' + fstr(np.cos(thetaj),fmat='18.15f', n_per_line=10))
+    print('vxw:' + fstr(vxj * np.cos(thetaj) - vyj * np.sin(thetaj),fmat='18.15f', n_per_line=10))
+    print('vyw:' + fstr(vxj * np.sin(thetaj) + vyj * np.cos(thetaj),fmat='18.15f', n_per_line=10))
+    '''
 
+    # numerical estimate of dlefts
     # get numerical estimate of derivative for single values
-    j = 1
-    k = 2
-    eps = 0.0001
 
-    _lefts = lefts[:]
-    _rights = rights[:]
-    _lefts[j] += eps
-    (pxjpe, pyjpe, thetaj, vxj, vyj, omegaj) = nr.poses(_lefts, _rights)
-    print('+l')
-    print('vxj:' + gstr(vxj, fmat='25.22f'))
-    print('vyj:' + gstr(vyj, fmat='25.22f'))
-    print('omegaj:' + gstr(omegaj, fmat='25.22f'))
-    print('thetaj:' + fstr(thetaj, fmat='25.22f'))
-    print('pxj:' + fstr(pxjpe, fmat='25.22f'))
-    print('pyj:' + fstr(pyjpe, fmat='25.22f'))
-    print('sin(theta):' + fstr(np.sin(thetaj), fmat='25.22f'))
-    print('cos(theta):' + fstr(np.cos(thetaj), fmat='25.22f'))
-    print('vxw:' + fstr(vxj * np.cos(thetaj) - vyj * np.sin(thetaj), fmat='25.22f'))
-    print('vyw:' + fstr(vxj * np.sin(thetaj) + vyj * np.cos(thetaj), fmat='25.22f'))
+    '''
+    dlefts_n = [0.0]
+    dpxdl_n = [0.0]
+    dpydl_n = [0.0]
+    dthetadl_n = [0.0]
+    dvxdl_n = [0.0]
+    dvydl_n = [0.0]
+    domegadl_n = [0.0]
+    for j in range(1, n):
+        dloss = nr.dloss_dleft(j, eps=1.e-3)
+        dlefts_n.append(dloss)
 
-    _lefts = lefts[:]
-    _rights = rights[:]
-    _rights[k] += eps
-    (pxkpe, pykpe, thetaj, vxj, vyj, omegaj) = nr.poses(_lefts, _rights)
-    print('+r)')
-    print('vxj:' + gstr(vxj, fmat='25.22f'))
-    print('vyj:' + gstr(vyj, fmat='25.22f'))
-    print('omegaj:' + gstr(omegaj, fmat='25.22f'))
-    print('thetaj:' + fstr(thetaj, fmat='25.22f'))
-    print('pxj:' + fstr(pxkpe, fmat='25.22f'))
-    print('pyj:' + fstr(pykpe, fmat='25.22f'))
-    print('sin(theta):' + fstr(np.sin(thetaj), fmat='25.22f'))
-    print('cos(theta):' + fstr(np.cos(thetaj), fmat='25.22f'))
-    print('vxw:' + fstr(vxj * np.cos(thetaj) - vyj * np.sin(thetaj), fmat='25.22f'))
-    print('vyw:' + fstr(vxj * np.sin(thetaj) + vyj * np.cos(thetaj), fmat='25.22f'))
+    drights_n = [0.0]
+    dpxdr_n = [0.0]
+    dpydr_n = [0.0]
+    dthetadr_n = [0.0]
+    dvxdr_n = [0.0]
+    dvydr_n = [0.0]
+    domegadr_n = [0.0]
+    for j in range(1, n):
+        dloss = nr.dloss_dright(j, eps=0.0001)
 
-    _lefts = lefts[:]
-    _rights = rights[:]
-    _rights[k] += eps
-    _lefts[j] += eps
-    (pxjpekpe, pyjpekpe, thetaj, vxj, vyj, omegaj) = nr.poses(_lefts, _rights)
-    print('+l+r')
-    print('vxj:' + gstr(vxj, fmat='25.22f'))
-    print('vyj:' + gstr(vyj, fmat='25.22f'))
-    print('omegaj:' + gstr(omegaj, fmat='25.22f'))
-    print('thetaj:' + fstr(thetaj, fmat='25.22f'))
-    print('pxj:' + fstr(pxjpekpe, fmat='25.22f'))
-    print('pyj:' + fstr(pyjpekpe, fmat='25.22f'))
-    print('sin(theta):' + fstr(np.sin(thetaj), fmat='25.22f'))
-    print('cos(theta):' + fstr(np.cos(thetaj), fmat='25.22f'))
-    print('vxw:' + fstr(vxj * np.cos(thetaj) - vyj * np.sin(thetaj), fmat='25.22f'))
-    print('vyw:' + fstr(vxj * np.sin(thetaj) + vyj * np.cos(thetaj), fmat='25.22f'))
+    print('dpxdl_n:' + estr(dpxdl_n))
+    print('dpxdl:' + estr(nr.dpxdl))
+    print('dpydl_n:' + estr(dpydl_n))
+    print('dpydl:' + estr(nr.dpydl))
+    print('dlefts_n:' + fstr(dlefts_n, fmat='18.15g', n_per_line=10))
+    print('dlefts:' + fstr(nr.dlefts, fmat='18.15g', n_per_line=10))    
+    print('drights_n:' + fstr(drights_n, fmat='18.15g', n_per_line=10))
+    print('drights:' + fstr(nr.drights, fmat='18.15g', n_per_line=10))
+    d2loss = []
+    for k in range(1, len(lefts)):
+        d2loss.append(nr.d2loss_dl_dl(k, eps=1.0e-3))
+    print('d2lossj:' + fstr(d2loss, fmat='18.15g', n_per_line=10))
+    #nr.poses(nr.als, nr.ars)
+    #nr.reloss()
+    #nr.gradients()
+    #(dlefts, drights) = nr.jacobian()
+    print('hessian:' + fstr(nr.hess, fmat='18.15g', n_per_line=10))
+print('d2pxdldl' + gstr(nr.d2pxdldl, fmat='18.15f', n_per_line=10))
+'''
 
-    dpxj = (pxjpe - pxj) / eps
-    dpyj = (pyjpe - pyj) / eps
-    d2pxjk = (pxjpekpe + pxj - pxjpe - pxkpe) / eps**2
-    d2pyjk = (pyjpekpe + pyj - pyjpe - pykpe) / eps**2
-    print('dpxj:' + estr(dpxj))
-    print('dpxdr:' + estr(nr.dpxdr[:,k]))
-    print('d2pxjk:' + estr(d2pxjk))
-    print('d2pyjk:' + estr(d2pyjk))
-    print('d2pxdldr[i, ', j, k, ']')
-    print(gstr(nr.d2pxdldr[:, j, k], fmat='25.22f', n_per_line=18))
+# look at 5,5
+'''
+eps = 1.0e-3
+base_als = nr.als.copy()
+
+lefts = base_als.copy()
+lefts[5] += eps
+#dlossp = self.dloss_dleft(j, eps)
+nr.poses(lefts, nr.ars, details=True)
+lossp = nr.reloss(True)
+nr.gradients()
+nr.jacobian()
+dlossp = nr.dlefts[5]
+pxp = nr.pxj[-1]
+pyp = nr.pyj[-1]
+
+lefts[5] -= eps
+nr.poses(lefts, nr.ars, details=True)
+lossc = nr.reloss(True)
+nr.gradients()
+nr.jacobian()
+dlossc = nr.dlefts[5]
+pxc = nr.pxj[-1]
+pyc = nr.pyj[-1]
+
+lefts[5] -= eps
+nr.poses(lefts, nr.ars, details=True)
+lossm = nr.reloss(True)
+nr.gradients()
+nr.jacobian()
+dlossm = nr.dlefts[5]
+pxm = nr.pxj[-1]
+pym = nr.pyj[-1]
+print(estr({'dlossp': dlossp, 'dlossc': dlossc, 'dlossm': dlossm}))
+print(estr({'d1': 0.5 * (lossp - lossm)/eps, 'd2': (-lossp + 2*lossc - lossm)/eps**2}))
+print(estr({'pxloss': .5 *(pxc-.01)**2, 'p1x': 0.5 * (pxp - pxm) / eps, 'p2x': (-pxp + 2*pxc - pxm)/eps**2}))
+print(estr({'pyloss': 0.5 * pyc**2, 'p1y': 0.5 * (pyp - pym) / eps, 'p2y': (-pyp + 2*pyc - pym)/eps**2}))
+'''
