@@ -1,13 +1,15 @@
 # newton-raphson iteration of motion equations
 
 import numpy as np
+import rospy
 import math
 import time
 from bdbd_common.utils import fstr, gstr
+from bdbd_common.msg import LeftRights
 from bdbd_common.geometry import lr_est, default_lr_model, D_TO_R
 
 def estr(a):
-    return fstr(a, fmat='6.3g', n_per_line=10)
+    return fstr(a, fmat='10.7g', n_per_line=10)
 
 class NewRaph():
     def __init__(self, n, dt
@@ -175,6 +177,9 @@ class NewRaph():
                     +bhxr * dotx
                     +bhyr * doty
                 )
+                #if i == 1 and k == 1:
+                #    print(estr({'bhor': bhor, 'doto': doto, 'bhxr': bhxr, 'dotx': dotx,
+                #        'bhyr': bhyr, 'doty': doty}))
                 doto = np.dot((vxcj[k:i+1] - vysj[k:i+1]), betaj[:i+1-k])
                 dotx = np.dot(sinj[k:i+1], alphaxj[:i+1-k])
                 doty = np.dot(cosj[k:i+1], alphayj[:i+1-k])
@@ -196,7 +201,7 @@ class NewRaph():
         return (dpxdl, dpxdr, dpydl, dpydr)
 
     def seconds(self):
-        # second partial derivatives
+        # second partial derivatives at final location
 
         (bhxl, bhxr, _) = self.bhes[0]
         (bhyl, bhyr, _) = self.bhes[1]
@@ -212,12 +217,12 @@ class NewRaph():
         vxwj = self.vxwj
         vywj = self.vywj
 
-        d2pxdldl = np.zeros((n, n, n))
-        d2pxdldr = np.zeros((n, n, n))
-        d2pxdrdr = np.zeros((n, n, n))
-        d2pydldl = np.zeros((n, n, n))
-        d2pydldr = np.zeros((n, n, n))
-        d2pydrdr = np.zeros((n, n, n))
+        d2pxdldl = np.zeros((n, n))
+        d2pxdldr = np.zeros((n, n))
+        d2pxdrdr = np.zeros((n, n))
+        d2pydldl = np.zeros((n, n))
+        d2pydldr = np.zeros((n, n))
+        d2pydrdr = np.zeros((n, n))
 
         # This could be vectorized, but instead I do it discretely to more closely
         # match the C++ version which is what we will actually use.
@@ -271,15 +276,13 @@ class NewRaph():
                         +sdt * (-betarjk * alphayrjm -alphayrjk * betarjm)
                         +cdt * (betarjk * alphayrjm +alphayrjk * betarjm)
                     )
-
-                    for i in range(j, n):
-                        #print('i,j,k,m', i, j, k, m)
-                        d2pxdldl[i, k, m] += sumxll
-                        d2pxdldr[i, k, m] += sumxlr
-                        d2pxdrdr[i, k, m] += sumxrr
-                        d2pydldl[i, k, m] += sumyll
-                        d2pydldr[i, k, m] += sumylr
-                        d2pydrdr[i, k, m] += sumyrr
+                    #print('i,j,k,m', i, j, k, m)
+                    d2pxdldl[k, m] += sumxll
+                    d2pxdldr[k, m] += sumxlr
+                    d2pxdrdr[k, m] += sumxrr
+                    d2pydldl[k, m] += sumyll
+                    d2pydldr[k, m] += sumylr
+                    d2pydrdr[k, m] += sumyrr
 
         self.d2pxdldl = d2pxdldl
         self.d2pxdldr = d2pxdldr
@@ -352,13 +355,17 @@ class NewRaph():
         ])
         targets = np.concatenate([target_pose, target_twist, target_lr])
         #targets = np.concatenate([target_pose, target_twist[:1], target_lr])
-        sumTargets = 0.5 * np.square(vals - targets).sum()
+        diffs = vals - targets
+        # normalize theta difference from -pi to pi
+        diffs[2] = (diffs[2] + math.pi) % (2 * math.pi) - math.pi
+        sumTargets = 0.5 * np.square(diffs).sum()
         loss = sumMax + sumJerk + sumTargets + sumBack
         if details:
             print('target losses: ' + estr(0.5 * np.square(vals - targets)))
             print(estr({'loss': loss, 'sumMax': sumMax, 'sumJerk': sumJerk, 'sumTargets': sumTargets, 'sumBack': sumBack}))
             print(fstr({'vals': vals}, fmat='15.12g'))
             print(fstr({'targets': targets}))
+            print(fstr({'diffs': diffs}))
         self.lossValue = loss
         return loss
 
@@ -400,13 +407,14 @@ class NewRaph():
 
         dlefts = np.zeros([n])
         drights = np.zeros([n])
+        difft = (thetaj[-1] - thetat + math.pi) % (2 * math.pi) - math.pi
 
         for k in range(1, n):
             dlefts[k] = (
                 +(vxj[-1] - vxt) * bhxl * alphaxj[n-1-k]
                 +(vyj[-1] - vyt) * bhyl * alphayj[n-1-k]
                 +(omegaj[-1] - omegat) * bhol * alphaoj[n-1-k]
-                +(thetaj[-1] - thetat) * bhol * betaj[n-1-k]
+                +(difft) * bhol * betaj[n-1-k]
                 +(pxj[-1] - pxt) * dpxdl[-1, k]
                 +(pyj[-1] - pyt) * dpydl[-1, k]
                 +Wmax * leftsp9[k] / mmax
@@ -417,7 +425,7 @@ class NewRaph():
                 +(vxj[-1] - vxt) * bhxr * alphaxj[n-1-k]
                 +(vyj[-1] - vyt) * bhyr * alphayj[n-1-k]
                 +(omegaj[-1] - omegat) * bhor * alphaoj[n-1-k]
-                +(thetaj[-1] - thetat) * bhor * betaj[n-1-k]
+                +(difft) * bhor * betaj[n-1-k]
                 +(pxj[-1] - pxt) * dpxdr[-1, k]
                 +(pyj[-1] - pyt) * dpydr[-1, k]
                 +Wmax * rightsp9[k]
@@ -500,12 +508,12 @@ class NewRaph():
                     dthds = betaj[n-m] * bhol
                     
                     if kleft:
-                        d2px = d2pxdldl[n, k, m]
-                        d2py = d2pydldl[n, k, m]
+                        d2px = d2pxdldl[k, m]
+                        d2py = d2pydldl[k, m]
                     else:
                         # note d2pxdrdl[i,j] = d2pxdldr[j,i]
-                        d2px = d2pxdldr[n, m, k]
-                        d2py = d2pydldr[n, m, k]
+                        d2px = d2pxdldr[m, k]
+                        d2py = d2pydldr[m, k]
                 else:
                     dpxds = dpxdr[n, m]
                     dpyds = dpydr[n, m]
@@ -514,11 +522,11 @@ class NewRaph():
                     domds = alphaoj[n-m] * bhor
                     dthds = betaj[n-m] * bhor
                     if kleft:
-                        d2px = d2pxdldr[n, k, m]
-                        d2py = d2pydldr[n, k, m]
+                        d2px = d2pxdldr[k, m]
+                        d2py = d2pydldr[k, m]
                     else:
-                        d2px = d2pxdrdr[n, k, m]
-                        d2py = d2pydrdr[n, k, m]
+                        d2px = d2pxdrdr[k, m]
+                        d2py = d2pydrdr[k, m]
                 hess[i, j] = (
                     deltapxn * d2px + dpxdu * dpxds +
                     deltapyn * d2py + dpydu * dpyds +
@@ -624,23 +632,21 @@ if __name__ == '__main__':
     from bdbd_common.pathPlan2 import PathPlan
     import matplotlib.pyplot as plt
 
-    fig = plt.figure(figsize=(8,4))
-    axis1 = None
-    axis2 = None
+    fig = plt.figure(figsize=(12,4))
 
     dt = 0.05
     lr_model = default_lr_model()
     #lr_model = ((1.0, 1.0, 10.0), (-1.0, 1.0, 10.0), (-1.0, 10.0, 10.0))
     start_pose = [0.0, 0.0, 0.0]
     start_twist = [0.0, 0.0, 0.0]
-    target_pose = [0.06, .01, D_TO_R * 0]
+    target_pose = [0.2, .1, D_TO_R * 180]
     target_twist = [0.0, 0.0, 0.0]
-    approach_rho = 0.02
-    min_rho = 0.005
-    cruise_v = 0.3
+    approach_rho = 0.05
+    min_rho = 0.02
+    cruise_v = 0.25
     lr_start = (0.0, 0.0)
     gauss_iters = 0
-    nr_iters = 1
+    nr_iters = 20
     Wmax = dt * 1.e-3
     #Wmax = 0.0
     Wjerk = dt * 1.e-3
@@ -648,7 +654,7 @@ if __name__ == '__main__':
     #Wback = 0.0
     NRstart = 1.0
     NRfact = 2
-    maxSlew = 1.0
+    maxSlew = 1.00
     testNR = False
 
     pp = PathPlan(approach_rho=approach_rho, min_rho=min_rho)
@@ -699,122 +705,100 @@ if __name__ == '__main__':
     for seg in vvs:
         print(estr(seg))
 
-    #lefts = lefts[:10]
-    #rights = rights[:10]
-    #tees = tees[:10]
-    '''
-    for i in range(10):
-        lefts.append(0.0)
-        rights.append(0.0)
-        tees.append(tees[-1] + dt)
-    '''
+    # send to C++ node for processing
+    rospy.init_node('NewRaph')
+    lrPub = rospy.Publisher('rawLR', LeftRights, queue_size=10)
+    lrMsg = LeftRights()
+    lrMsg.dt = dt
+    lrMsg.lefts = lefts
+    lrMsg.rights = rights
+    start_lefts = lefts.copy()
+    start_rights = rights.copy()
 
-    n = len(lefts)
-    nr = NewRaph(n, dt
-        ,lr_model=lr_model
-        ,start_pose=start_pose
-        ,start_twist=start_twist
-    )
-    # gradient descent iteration
-    eps = 0.5
-    last_loss = 1.e10
-    last_lefts = None
-    last_rights = None
-    last_dlefts = None
-    last_drights = None
-    last_deltax = None
-    doNR = False
-    deltax = None
-    maxNR = False
+    while not rospy.is_shutdown():
+        lefts = start_lefts.copy()
+        rights = start_rights.copy()
+        lrPub.publish(lrMsg)
+        print('\n***** publishing rawLR *****')
 
-    for count in range(gauss_iters + nr_iters):
-        (pxj, pyj, thetaj, vxj, vyj, omegaj) = nr.poses(lefts, rights)
-        loss = nr.loss(mmax=1.0, target_pose=target_pose, Wmax=Wmax, Wjerk=Wjerk, Wback=Wback, details=True)
-        (dpxdl, dpxdr, dpydl, dpydr) = nr.gradients()
-        (dlefts, drights) = nr.jacobian()
-
-        #print('loss time:', time.time() - start)
-        #print('loss:', loss)
-
-        #print('jacobian time:', time.time() - start)
-        '''
-        start = time.time()
-        (d2pxdldl, d2pxdldr, d2pxdrdr, d2pydldl, d2pydldr, d2pydrdr) = nr.seconds()
-        print('seconds time:', time.time() - start)
-        '''
-
-        fig.clf()
-        plt1 = fig.add_subplot(121)
-        #plt1.axis([0.0, tfPath.lrs[-1]['t'], -1.5, 1.5])
-        plt2 = fig.add_subplot(122)
-
-        '''
-        if axis1 is not None:
-            plt1.axis(axis1)
-        if axis2 is not None:
-            plt2.axis(axis2)
-        else:
-        '''
-        plt2.axis('equal')
-
-        plt1.plot(tees, lefts)
-        plt1.plot(tees, rights)
-        plt1.plot(tees, omegaj)
-
-        plt2.plot(pxj, pyj)
-
-        plt.pause(0.001)
-        if axis1 is None:
-            axis1 = plt1.axis()
-        if axis2 is None:
-            axis2 = plt2.axis()
-
+        n = len(lefts)
+        nr = NewRaph(n, dt
+            ,lr_model=lr_model
+            ,start_pose=start_pose
+            ,start_twist=start_twist
+        )
+        eps = 1.0
         nhess = len(lefts) - 1
-        # update lefts, rights
-        print(fstr({'count': count, 'eps': eps, 'loss': loss, 'last_loss': last_loss,
-            'lmax': np.amax(lefts), 'rmax': np.amax(rights)}, fmat='15.12f'))
-        if count >= gauss_iters and not doNR:
-            eps = NRstart
-            doNR = True
-        if loss < last_loss or (doNR and last_deltax is None):
-            last_loss = loss
-            last_lefts = lefts.copy()
-            last_rights = rights.copy()
-            last_dlefts = dlefts.copy()
-            last_drights = drights.copy()
+        axis3 = None
+        gauss_count = 0
+        nr_count = 0
+        while True:
+            if rospy.is_shutdown():
+                break
+            base_lefts = lefts.copy()
+            base_rights = rights.copy()
+            rospy.sleep(0.01)
+            (pxj, pyj, thetaj, vxj, vyj, omegaj) = nr.poses(lefts, rights)
+            loss = nr.loss(mmax=1.0, target_pose=target_pose, Wmax=Wmax, Wjerk=Wjerk, Wback=Wback, details=True)
+            print('loss: ' + estr(loss))
+            (dpxdl, dpxdr, dpydl, dpydr) = nr.gradients()
+            (dlefts, drights) = nr.jacobian()
+            #print(gstr({'dlefts': dlefts, '\ndrights': drights}))
 
-
-            if not doNR:
-                # gradient descent
+            if gauss_count < gauss_iters:
+                #eps = 1.0
+                gauss_count += 1
+                slew = 0.0
                 for i in range(1, n):
-                    lefts[i] -= eps*dlefts[i]
-                    rights[i] -= eps*drights[i]
-                eps *= 1.3
+                    if abs(dlefts[i]) > slew:
+                        slew = abs(dlefts[i])
+                    if abs(drights[i]) > slew:
+                        slew = abs(drights[i])
+                # line search over deltax looking for best eps
+                best_eps = 0.0
+                best_loss = loss
+                worst_eps = maxSlew / slew
+                print('eps limited to ', worst_eps)
+                eps = min(eps, worst_eps)
+                for lcount in range(4):
+                    last_eps = eps
+                    for i in range(1, n):
+                        lefts[i] = base_lefts[i] - eps*dlefts[i]
+                        rights[i] = base_rights[i] - eps*drights[i]
+                    nr.poses(lefts, rights)
+                    loss = nr.reloss()
+                    if loss > best_loss:
+                        worst_eps = eps
+                    else:
+                        best_eps = eps
+                        best_loss = loss
+                    if eps * 2 < worst_eps:
+                        eps *= 2
+                    else:
+                        eps = 0.5 * (best_eps + worst_eps)
+                    print(estr({'(G)eps': last_eps, 'loss': loss, 'best_eps': best_eps, 'worst_eps': worst_eps, 'new_eps': eps}))
+                
+                eps = best_eps
+                for i in range(1, n):
+                    lefts[i] = base_lefts[i] - eps*dlefts[i]
+                    rights[i] = base_rights[i] - eps*drights[i]
+
             else:
-                #Newton-Raphson
-                if eps > 0.99:
-                    maxNR = True
-                print('Using Newton-Raphson!')
-                (d2pxdldl, d2pxdldr, d2pxdrdr, d2pydldl, d2pydldr, d2pydrdr) = nr.seconds()
+                if nr_count >= nr_iters:
+                    break
+                nr_count += 1
+                nr.seconds()
                 hess = nr.hessian()
                 b = np.concatenate([-nr.dlefts[1:], -nr.drights[1:]])
-                if deltax is not None:
-                    last_deltax = deltax.copy()
                 deltax = np.linalg.solve(nr.hess, b)
                 slew = np.amax(np.absolute(deltax))
 
                 # line search over deltax looking for best eps
                 best_eps = 0.0
-                best_loss = last_loss
-                if slew > maxSlew:
-                    worst_eps = maxSlew / slew
-                    eps = worst_eps / 2.0
-                    print('eps limited by slew to {:6.3f}'.format(worst_eps))
-                else:
-                    worst_eps = None
-                base_lefts = lefts.copy()
-                base_rights = rights.copy()
-                for lcount in range(6):
+                best_loss = loss
+                worst_eps = maxSlew / slew
+                eps = min(eps, worst_eps)
+                for lcount in range(4):
                     last_eps = eps
                     lefts[1:] = base_lefts[1:] + eps * deltax[:nhess]
                     rights[1:] = base_rights[1:] + eps * deltax[nhess:]
@@ -825,173 +809,42 @@ if __name__ == '__main__':
                     else:
                         best_eps = eps
                         best_loss = loss
-                    if worst_eps is None:
+                    if eps * 2 < worst_eps:
                         eps *= 2
                     else:
                         eps = 0.5 * (best_eps + worst_eps)
-                    print(estr({'eps': last_eps, 'loss': loss, 'best_eps': best_eps, 'worst_eps': worst_eps, 'new_eps': eps}))
+                    print(estr({'(N)eps': last_eps, 'loss': loss, 'best_eps': best_eps, 'worst_eps': worst_eps, 'new_eps': eps}))
                 
-                eps = min(best_eps, 1.0)
+                eps = best_eps
+                #eps = min(best_eps, 1.0)
+                print('using eps: ', eps)
                 lefts[1:] = base_lefts[1:] + eps * deltax[:nhess]
                 rights[1:] = base_rights[1:] + eps * deltax[nhess:]
-                print('deltax:' + estr(deltax))
-                if deltax.ptp() < 1.e-6:
-                    print('done, little delta x')
-                    break
-                
-                '''
-                # limit slew rate
 
-                if testNR:
-                    eps *= 2
-                    if eps >= 1.0:
-                        break
+            fig.clf()
+            plt1 = fig.add_subplot(131)
+            #plt1.axis([0.0, tfPath.lrs[-1]['t'], -1.5, 1.5])
+            plt2 = fig.add_subplot(132)
+            plt3 = fig.add_subplot(133)
 
-                    lefts[1:] = last_lefts[1:] + eps * deltax[:nhess]
-                    rights[1:] = last_rights[1:] + eps * deltax[nhess:]
-                else:
-                    last_lefts = lefts.copy()
-                    last_rights = rights.copy()
+            if axis3 is not None:
+                plt3.axis(axis3)
 
-                    slew = np.amax(np.absolute(deltax))
-                    eps = min(eps, maxSlew / slew)
+            plt2.axis('equal')
 
-                    lefts[1:] += eps * deltax[:nhess]
-                    rights[1:] += eps * deltax[nhess:]
-                    eps = min(1.0, NRfact*eps)
-                '''
+            plt1.plot(tees, lefts)
+            plt1.plot(tees, rights)
+            plt1.plot(tees, omegaj)
 
-        else:
-            print('uh, oh!')
-            if maxNR:
-                print('done')
-                break
+            plt2.plot(pxj, pyj)
+            plt3.plot(tees, pxj)
+            plt3.plot(tees, pyj)
 
-            if not doNR:
-                eps *= .5
-                lefts[1:] = last_lefts[1:] - eps * last_dlefts[1:]
-                rights[1:] = last_rights[1:] - eps * last_drights[1:]
+            if gauss_count == 1:
+                plt.pause(1.0)
             else:
-                eps *= .5 / NRfact
-                lefts[1:] = last_lefts[1:] + eps * last_deltax[:nhess]
-                rights[1:] = last_rights[1:] + eps * last_deltax[nhess:]
+                plt.pause(1.0)
+            if axis3 is None:
+                axis3 = plt3.axis()
 
-        #print('lefts:' + estr(lefts))
-        #print('rights:' + estr(rights))
-        time.sleep(1.0)
-    print('press any button to continue')
-    plt.waitforbuttonpress()
-    print('pxj:' + estr(pxj))
-    print('pyj:' + estr(pyj))
-    print('thetaj:' + estr(thetaj))
-    print('vxj:' + estr(vxj))
-    print('vyj:' + estr(vyj))
-    print('omegaj:' + estr(omegaj))
-    print('lefts:' + estr(lefts))
-    print('rights:' + estr(rights))
-    '''
-    #print('dlefts:' + fstr(dlefts, fmat='18.15g', n_per_line=10))
-    #print('drights:' + fstr(drights, fmat='18.15g', n_per_line=10))
-    #print('hessian:' + fstr(nr.hess, fmat='18.15g', n_per_line=10))
-
-    print('dpxdl:' + gstr(nr.dpxdl, fmat='18.15f', n_per_line=10))
-    print('dpxdr:' + gstr(nr.dpxdr, fmat='18.15f', n_per_line=10))
-    print('dpydl:' + gstr(nr.dpydl, fmat='18.15f', n_per_line=10))
-    print('dpydr:' + gstr(nr.dpydr, fmat='18.15f', n_per_line=10))
-    print('d2pxdldl' + gstr(nr.d2pxdldl, fmat='18.15f', n_per_line=10))
-    print('d2pxdldr' + gstr(nr.d2pxdldr, fmat='18.15f', n_per_line=10))
-    print('d2pxdrdr' + gstr(nr.d2pxdrdr, fmat='18.15f', n_per_line=10))
-    print('d2pydldl' + gstr(nr.d2pydldl, fmat='18.15f', n_per_line=10))
-    print('d2pydldr' + gstr(nr.d2pydldr, fmat='18.15f', n_per_line=10))
-    print('d2prdrdr' + gstr(nr.d2pydrdr, fmat='18.15f', n_per_line=10))
-    print('sin(theta):' + fstr(np.sin(thetaj),fmat='18.15f', n_per_line=10))
-    print('cos(theta):' + fstr(np.cos(thetaj),fmat='18.15f', n_per_line=10))
-    print('vxw:' + fstr(vxj * np.cos(thetaj) - vyj * np.sin(thetaj),fmat='18.15f', n_per_line=10))
-    print('vyw:' + fstr(vxj * np.sin(thetaj) + vyj * np.cos(thetaj),fmat='18.15f', n_per_line=10))
-    '''
-
-    # numerical estimate of dlefts
-    # get numerical estimate of derivative for single values
-    '''
-    dlefts_n = [0.0]
-    dpxdl_n = [0.0]
-    dpydl_n = [0.0]
-    dthetadl_n = [0.0]
-    dvxdl_n = [0.0]
-    dvydl_n = [0.0]
-    domegadl_n = [0.0]
-    for j in range(1, n):
-        dloss = nr.dloss_dleft(j, eps=1.e-5)
-        dlefts_n.append(dloss)
-
-    drights_n = [0.0]
-    dpxdr_n = [0.0]
-    dpydr_n = [0.0]
-    dthetadr_n = [0.0]
-    dvxdr_n = [0.0]
-    dvydr_n = [0.0]
-    domegadr_n = [0.0]
-    for j in range(1, n):
-        dloss = nr.dloss_dright(j, eps=1.e-5)
-        drights_n.append(dloss)
-
-    #print('dpxdl_n:' + estr(dpxdl_n))
-    print('dpxdl:' + estr(nr.dpxdl))
-    #print('dpydl_n:' + estr(dpydl_n))
-    print('dpydl:' + estr(nr.dpydl))
-    print('dlefts_n:' + fstr(dlefts_n, fmat='18.15g', n_per_line=10))
-    print('dlefts:' + fstr(nr.dlefts, fmat='18.15g', n_per_line=10))    
-    print('drights_n:' + fstr(drights_n, fmat='18.15g', n_per_line=10))
-    print('drights:' + fstr(nr.drights, fmat='18.15g', n_per_line=10))
-    d2loss = []
-    for k in range(1, len(lefts)):
-        d2loss.append(nr.d2loss_dl_dl(k, eps=1.0e-4))
-    
-    print('d2lossj:' + fstr(d2loss, fmat='18.15g', n_per_line=10))
-    #nr.poses(nr.als, nr.ars)
-    #nr.reloss()
-    #nr.gradients()
-    #(dlefts, drights) = nr.jacobian()
-    print('hessian:' + fstr(nr.hess, fmat='18.15g', n_per_line=10))
-    #print('d2pxdldl' + gstr(nr.d2pxdldl, fmat='18.15f', n_per_line=10))
-    '''
-
-
-# look at 5,5
-'''
-eps = 1.0e-3
-base_als = nr.als.copy()
-
-lefts = base_als.copy()
-lefts[5] += eps
-#dlossp = self.dloss_dleft(j, eps)
-nr.poses(lefts, nr.ars, details=True)
-lossp = nr.reloss(True)
-nr.gradients()
-nr.jacobian()
-dlossp = nr.dlefts[5]
-pxp = nr.pxj[-1]
-pyp = nr.pyj[-1]
-
-lefts[5] -= eps
-nr.poses(lefts, nr.ars, details=True)
-lossc = nr.reloss(True)
-nr.gradients()
-nr.jacobian()
-dlossc = nr.dlefts[5]
-pxc = nr.pxj[-1]
-pyc = nr.pyj[-1]
-
-lefts[5] -= eps
-nr.poses(lefts, nr.ars, details=True)
-lossm = nr.reloss(True)
-nr.gradients()
-nr.jacobian()
-dlossm = nr.dlefts[5]
-pxm = nr.pxj[-1]
-pym = nr.pyj[-1]
-print(estr({'dlossp': dlossp, 'dlossc': dlossc, 'dlossm': dlossm}))
-print(estr({'d1': 0.5 * (lossp - lossm)/eps, 'd2': (-lossp + 2*lossc - lossm)/eps**2}))
-print(estr({'pxloss': .5 *(pxc-.01)**2, 'p1x': 0.5 * (pxp - pxm) / eps, 'p2x': (-pxp + 2*pxc - pxm)/eps**2}))
-print(estr({'pyloss': 0.5 * pyc**2, 'p1y': 0.5 * (pyp - pym) / eps, 'p2y': (-pyp + 2*pyc - pym)/eps**2}))
-'''
+        plt.waitforbuttonpress()

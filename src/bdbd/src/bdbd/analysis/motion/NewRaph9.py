@@ -1,13 +1,15 @@
 # newton-raphson iteration of motion equations
 
 import numpy as np
+import rospy
 import math
 import time
 from bdbd_common.utils import fstr, gstr
+from bdbd_common.msg import LeftRights
 from bdbd_common.geometry import lr_est, default_lr_model, D_TO_R
 
 def estr(a):
-    return fstr(a, fmat='6.3g', n_per_line=10)
+    return fstr(a, fmat='10.7g', n_per_line=10)
 
 class NewRaph():
     def __init__(self, n, dt
@@ -175,6 +177,9 @@ class NewRaph():
                     +bhxr * dotx
                     +bhyr * doty
                 )
+                #if i == 1 and k == 1:
+                #    print(estr({'bhor': bhor, 'doto': doto, 'bhxr': bhxr, 'dotx': dotx,
+                #        'bhyr': bhyr, 'doty': doty}))
                 doto = np.dot((vxcj[k:i+1] - vysj[k:i+1]), betaj[:i+1-k])
                 dotx = np.dot(sinj[k:i+1], alphaxj[:i+1-k])
                 doty = np.dot(cosj[k:i+1], alphayj[:i+1-k])
@@ -196,7 +201,7 @@ class NewRaph():
         return (dpxdl, dpxdr, dpydl, dpydr)
 
     def seconds(self):
-        # second partial derivatives
+        # second partial derivatives at final location
 
         (bhxl, bhxr, _) = self.bhes[0]
         (bhyl, bhyr, _) = self.bhes[1]
@@ -212,12 +217,12 @@ class NewRaph():
         vxwj = self.vxwj
         vywj = self.vywj
 
-        d2pxdldl = np.zeros((n, n, n))
-        d2pxdldr = np.zeros((n, n, n))
-        d2pxdrdr = np.zeros((n, n, n))
-        d2pydldl = np.zeros((n, n, n))
-        d2pydldr = np.zeros((n, n, n))
-        d2pydrdr = np.zeros((n, n, n))
+        d2pxdldl = np.zeros((n, n))
+        d2pxdldr = np.zeros((n, n))
+        d2pxdrdr = np.zeros((n, n))
+        d2pydldl = np.zeros((n, n))
+        d2pydldr = np.zeros((n, n))
+        d2pydrdr = np.zeros((n, n))
 
         # This could be vectorized, but instead I do it discretely to more closely
         # match the C++ version which is what we will actually use.
@@ -271,15 +276,13 @@ class NewRaph():
                         +sdt * (-betarjk * alphayrjm -alphayrjk * betarjm)
                         +cdt * (betarjk * alphayrjm +alphayrjk * betarjm)
                     )
-
-                    for i in range(j, n):
-                        #print('i,j,k,m', i, j, k, m)
-                        d2pxdldl[i, k, m] += sumxll
-                        d2pxdldr[i, k, m] += sumxlr
-                        d2pxdrdr[i, k, m] += sumxrr
-                        d2pydldl[i, k, m] += sumyll
-                        d2pydldr[i, k, m] += sumylr
-                        d2pydrdr[i, k, m] += sumyrr
+                    #print('i,j,k,m', i, j, k, m)
+                    d2pxdldl[k, m] += sumxll
+                    d2pxdldr[k, m] += sumxlr
+                    d2pxdrdr[k, m] += sumxrr
+                    d2pydldl[k, m] += sumyll
+                    d2pydldr[k, m] += sumylr
+                    d2pydrdr[k, m] += sumyrr
 
         self.d2pxdldl = d2pxdldl
         self.d2pxdldr = d2pxdldr
@@ -500,12 +503,12 @@ class NewRaph():
                     dthds = betaj[n-m] * bhol
                     
                     if kleft:
-                        d2px = d2pxdldl[n, k, m]
-                        d2py = d2pydldl[n, k, m]
+                        d2px = d2pxdldl[k, m]
+                        d2py = d2pydldl[k, m]
                     else:
                         # note d2pxdrdl[i,j] = d2pxdldr[j,i]
-                        d2px = d2pxdldr[n, m, k]
-                        d2py = d2pydldr[n, m, k]
+                        d2px = d2pxdldr[m, k]
+                        d2py = d2pydldr[m, k]
                 else:
                     dpxds = dpxdr[n, m]
                     dpyds = dpydr[n, m]
@@ -514,11 +517,11 @@ class NewRaph():
                     domds = alphaoj[n-m] * bhor
                     dthds = betaj[n-m] * bhor
                     if kleft:
-                        d2px = d2pxdldr[n, k, m]
-                        d2py = d2pydldr[n, k, m]
+                        d2px = d2pxdldr[k, m]
+                        d2py = d2pydldr[k, m]
                     else:
-                        d2px = d2pxdrdr[n, k, m]
-                        d2py = d2pydrdr[n, k, m]
+                        d2px = d2pxdrdr[k, m]
+                        d2py = d2pydrdr[k, m]
                 hess[i, j] = (
                     deltapxn * d2px + dpxdu * dpxds +
                     deltapyn * d2py + dpydu * dpyds +
@@ -633,11 +636,11 @@ if __name__ == '__main__':
     #lr_model = ((1.0, 1.0, 10.0), (-1.0, 1.0, 10.0), (-1.0, 10.0, 10.0))
     start_pose = [0.0, 0.0, 0.0]
     start_twist = [0.0, 0.0, 0.0]
-    target_pose = [0.06, .01, D_TO_R * 0]
+    target_pose = [0.2, .1, D_TO_R * 0]
     target_twist = [0.0, 0.0, 0.0]
-    approach_rho = 0.02
-    min_rho = 0.005
-    cruise_v = 0.3
+    approach_rho = 0.05
+    min_rho = 0.02
+    cruise_v = 0.25
     lr_start = (0.0, 0.0)
     gauss_iters = 0
     nr_iters = 1
@@ -698,6 +701,58 @@ if __name__ == '__main__':
             break
     for seg in vvs:
         print(estr(seg))
+
+    # send to C++ node for processing
+    rospy.init_node('NewRaph')
+    lrPub = rospy.Publisher('rawLR', LeftRights, queue_size=10)
+    lrMsg = LeftRights()
+    lrMsg.dt = dt
+    lrMsg.lefts = lefts
+    lrMsg.rights = rights
+    base_lefts = lefts.copy()
+    base_rights = rights.copy()
+
+    while not rospy.is_shutdown():
+        lefts = base_lefts.copy()
+        rights = base_rights.copy()
+        lrPub.publish(lrMsg)
+        print('\n***** publishing rawLR *****')
+        '''
+        n = len(lefts)
+        nr = NewRaph(n, dt
+            ,lr_model=lr_model
+            ,start_pose=start_pose
+            ,start_twist=start_twist
+        )
+        for count in range(5):
+            (pxj, pyj, thetaj, vxj, vyj, omegaj) = nr.poses(lefts, rights)
+            loss = nr.loss(mmax=1.0, target_pose=target_pose, Wmax=Wmax, Wjerk=Wjerk, Wback=Wback, details=False)
+            print('loss: ' + estr(loss))
+            print('lefts:' + fstr(lefts))
+            print('rights:' + fstr(rights))
+            (dpxdl, dpxdr, dpydl, dpydr) = nr.gradients()
+            nr.jacobian()
+            nr.seconds()
+            hess = nr.hessian()
+            b = np.concatenate([-nr.dlefts[1:], -nr.drights[1:]])
+            print('b' + fstr(b, fmat='10.7f'))
+            print('hessian[3:]\n' + fstr(hess[3,:], n_per_line=11, fmat='11.6f'))
+            deltax = np.linalg.solve(nr.hess, b)
+            print('deltax:' + estr(deltax))
+
+            #print('pxj:' + fstr(pxj))
+            #print('pyj:' + fstr(pyj))
+            eps = 1.0
+            nhess = len(lefts) - 1
+            lefts[1:] = lefts[1:] + eps * deltax[:nhess]
+            rights[1:] = rights[1:] + eps * deltax[nhess:]
+            #print('dpydr:' + estr(dpydr))
+            #print('dlefts:' + fstr(nr.dlefts, fmat='10.7f'))
+            #print('drights:' + fstr(nr.drights, fmat='10.7f'))
+        '''
+        rospy.sleep(2.0)
+    exit(0)
+
 
     #lefts = lefts[:10]
     #rights = rights[:10]
