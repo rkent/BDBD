@@ -103,31 +103,34 @@ class PathPlot():
 
         plt1.plot(tees, s.lefts)
         plt1.plot(tees, s.rights)
+        plt1.set_title('left,right')
         # plt1.plot(s.tees, s.omegaj)
 
         plt2.plot(s.pxj, s.pyj)
+        plt2.set_title('px vs py')
         plt3.plot(tees, s.pxj)
         plt3.plot(tees, s.pyj)
+        plt3.set_title('px,py vs t')
         plt.pause(.0001)
 
 if __name__ == '__main__':
 
-    dt = 0.025
+    dt = 0.02
     lr_model = default_lr_model()
     #lr_model = ((1.0, 1.0, 10.0), (-1.0, 1.0, 10.0), (-1.0, 10.0, 10.0))
     start_pose = [0.0, 0.0, 0.0]
     start_twist = [0.0, 0.0, 0.0]
-    target_pose = [0.1, .01, D_TO_R * 0]
+    target_pose = [0.3, .3, D_TO_R * 0]
     target_twist = [0.0, 0.0, 0.0]
-    approach_rho = 0.10
+    approach_rho = 0.05
     min_rho = 0.02
     cruise_v = 0.25
     lr_start = (0.0, 0.0)
     gauss_iters = 20
     nr_iters = 20
-    Wmax = 1.e-4
+    Wmax = 1.e-5
     #Wmax = 0.0
-    Wjerk = 1.e-2
+    Wjerk = 1.e-3
     Wback = 1.0
     #Wback = 0.0
     mmax = 1.0
@@ -136,24 +139,32 @@ if __name__ == '__main__':
     maxSlew = 2.00
     testNR = False
     DO_LOCAL = False
+    maxN = 100
 
     rospy.init_node('NewRaph')
 
     nr = NewRaph()
-    (lefts, rights) = nr.initial_plan(dt
-        , lr_model=lr_model
-        , start_pose=start_pose
-        , start_twist=start_twist
-        , target_pose=target_pose
-        , target_twist=target_twist
-        , Wmax=Wmax
-        , Wjerk=Wjerk
-        , Wback=Wback
-        , mmax=1.0
-        , approach_rho=approach_rho
-        , min_rho=min_rho
-    )
-    n = len(lefts)
+    for count in range(3):
+        (lefts, rights) = nr.initial_plan(dt
+            , lr_model=lr_model
+            , start_pose=start_pose
+            , start_twist=start_twist
+            , target_pose=target_pose
+            , target_twist=target_twist
+            , Wmax=Wmax
+            , Wjerk=Wjerk
+            , Wback=Wback
+            , mmax=1.0
+            , approach_rho=approach_rho
+            , min_rho=min_rho
+        )
+        n = len(lefts)
+        if n > maxN:
+            dt *= n / maxN
+            print('n=', n, ' too large, adjusting dt to ', dt)
+        else:
+            break
+
     pathPlot = PathPlot()
 
     # send to C++ node for processing
@@ -271,8 +282,8 @@ if __name__ == '__main__':
         else:
             if not lroClient.queue.empty():
                 result = lroClient.queue.get();
-                tt = 0.0
                 '''
+                tt = 0.0
                 for i in range(len(result.lefts)):
                     print(fstr({
                         't': tt,
@@ -285,3 +296,4 @@ if __name__ == '__main__':
                 '''
                 # print(gstr({'lefts': result.lefts, 'rights': result.rights}))
                 pathPlot(result.dt, result)
+                print(fstr({'n': len(result.lefts), 'px[-1]': result.pxj[-1], 'py[-1]': result.pyj[-1], 'theta[-1]': result.thetaj[-1]}))

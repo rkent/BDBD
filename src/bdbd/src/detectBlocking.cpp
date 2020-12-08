@@ -20,7 +20,7 @@
 #include "libcpp/fitting3d.hpp"
 #include <Eigen/Core>
 #include <Eigen/Dense>
-#include <stdio.h>
+
 
 using namespace std;
 

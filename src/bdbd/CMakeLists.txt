@@ -68,6 +68,7 @@ add_message_files(
   NameProb.msg
   RoadBlocking.msg
   SpeechAction.msg
+  LeftRights.msg
 )
 
 ## Generate services in the 'srv' folder
