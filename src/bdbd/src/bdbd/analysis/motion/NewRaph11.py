@@ -53,6 +53,7 @@ class LrOptimizeClient:
         ,target_pose=(0.0, 0.0, 0.0)
         ,target_twist=(0.0, 0.0, 0.0)
         ,target_lr=(0.0, 0.0)
+        ,rate=20
 
     ):
         self.start = time.time()
@@ -75,6 +76,7 @@ class LrOptimizeClient:
         goal.mmax = self.mmax
         goal.gaussItersMax = gaussItersMax
         goal.nrItersMax = nrItersMax
+        goal.rate = rate
         self.client.send_goal(goal, done_cb=self.done_cb, feedback_cb=self.feedback_cb)
         rospy.loginfo('waiting for result')
 
@@ -120,7 +122,7 @@ if __name__ == '__main__':
     #lr_model = ((1.0, 1.0, 10.0), (-1.0, 1.0, 10.0), (-1.0, 10.0, 10.0))
     start_pose = [0.0, 0.0, 0.0]
     start_twist = [0.0, 0.0, 0.0]
-    target_pose = [0.3, .3, D_TO_R * 0]
+    target_pose = [0.2, 0.0, D_TO_R * 0]
     target_twist = [0.0, 0.0, 0.0]
     approach_rho = 0.05
     min_rho = 0.02
@@ -140,6 +142,7 @@ if __name__ == '__main__':
     testNR = False
     DO_LOCAL = False
     maxN = 100
+    rate = 20
 
     rospy.init_node('NewRaph')
 
@@ -176,6 +179,7 @@ if __name__ == '__main__':
         , start_pose=start_pose
         , start_twist=start_twist
         , target_pose=target_pose
+        , rate=rate
         )
     print('\n***** started action *****')
 
