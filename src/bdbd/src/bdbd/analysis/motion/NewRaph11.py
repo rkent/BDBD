@@ -4,7 +4,7 @@ import numpy as np
 import time
 import rospy
 from bdbd_common.utils import fstr, gstr
-from bdbd_common.geometry import lr_est, default_lr_model, D_TO_R
+from bdbd_common.geometry import lr_est, default_lr_model, D_TO_R, transform2d
 from bdbd_common.NewRaph import NewRaph
 from bdbd_common.msg import LrOptimizeGoal, LrOptimizeAction, LrResult
 import actionlib
@@ -83,7 +83,20 @@ class LrOptimizeClient:
 class PathPlot():
     def __init__(self):
         self.fig = plt.figure(figsize=(12,4))
+        self.base_pxj = None
+        self.base_pyj = None
+        self.base_frame = None
+        self.history_pxj_base = []
+        self.history_pyj_base = []
+        self.count = 0
+        self.plan_history = []
     def __call__(self, dt, source):
+        if self.base_frame is None:
+            # save the first predicted trajectory and frame
+            self.base_pxj = result.pxj
+            self.base_pyj = result.pyj
+            self.base_frame = result.now_pose_map
+
         fig = self.fig
         s = source
         tees = [0.0]
@@ -108,8 +121,30 @@ class PathPlot():
         plt1.set_title('left,right')
         # plt1.plot(s.tees, s.omegaj)
 
-        plt2.plot(s.pxj, s.pyj)
+        # Transform to base_frame coordinates
+        pxj_base = []
+        pyj_base = []
+        for i in range(len(s.pxj)):
+            p_robot = (s.pxj[i], s.pyj[i], s.thetaj[i])
+            p_base = transform2d(p_robot, s.now_pose_map, self.base_frame)
+            pxj_base.append(p_base[0])
+            pyj_base.append(p_base[1])
+
+        now_pose_base = transform2d(s.now_pose_map, (0., 0., 0.), self.base_frame)
+        self.history_pxj_base.append(now_pose_base[0])
+        self.history_pyj_base.append(now_pose_base[1])
+
+        if self.count % 1 == 0:
+            self.plan_history.append((pxj_base, pyj_base))
+        else:
+            plt2.plot(pxj_base, pyj_base)
+        for plan in self.plan_history:
+            plt2.plot(plan[0], plan[1])
+        #plt2.plot(self.base_pxj, self.base_pyj)
+        plt2.plot(pxj_base, pyj_base)
+        plt2.plot(self.history_pxj_base, self.history_pyj_base, 'r+')
         plt2.set_title('px vs py')
+
         plt3.plot(tees, s.pxj)
         plt3.plot(tees, s.pyj)
         plt3.set_title('px,py vs t')
@@ -122,7 +157,7 @@ if __name__ == '__main__':
     #lr_model = ((1.0, 1.0, 10.0), (-1.0, 1.0, 10.0), (-1.0, 10.0, 10.0))
     start_pose = [0.0, 0.0, 0.0]
     start_twist = [0.0, 0.0, 0.0]
-    target_pose = [0.2, 0.0, D_TO_R * 0]
+    target_pose = [0.3, 0.1, D_TO_R * 180]
     target_twist = [0.0, 0.0, 0.0]
     approach_rho = 0.05
     min_rho = 0.02
@@ -132,7 +167,7 @@ if __name__ == '__main__':
     nr_iters = 20
     Wmax = 1.e-5
     #Wmax = 0.0
-    Wjerk = 1.e-3
+    Wjerk = 1.e-2
     Wback = 1.0
     #Wback = 0.0
     mmax = 1.0
@@ -140,7 +175,6 @@ if __name__ == '__main__':
     NRfact = 2
     maxSlew = 2.00
     testNR = False
-    DO_LOCAL = False
     maxN = 100
     rate = 20
 
@@ -187,117 +221,25 @@ if __name__ == '__main__':
     nr_count = 0
     eps = 1.0
     while not rospy.is_shutdown():
-        rospy.sleep(0.01) 
-
-        if DO_LOCAL:
-            lefts = lefts.copy()
-            rights = rights.copy()
-            nhess = len(lefts) - 1
-            base_lefts = lefts.copy()
-            base_rights = rights.copy()
-            (pxj, pyj, thetaj, vxj, vyj, omegaj) = nr.poses(lefts, rights)
-
-            pathPlot(dt, nr)
-
-            loss = nr.loss(details=True)
-            print('loss {} gauss_count {} nr_count {}'.format(loss, gauss_count, nr_count))
-            (dpxdl, dpxdr, dpydl, dpydr) = nr.gradients()
-            (dlefts, drights) = nr.jacobian()
-            #print(gstr({'dlefts': dlefts, '\ndrights': drights}))
-
-            if gauss_count < gauss_iters:
-                rospy.sleep(0.01)
-                #eps = 1.0
-                gauss_count += 1
-                slew = 0.0
-                for i in range(1, n):
-                    if abs(dlefts[i]) > slew:
-                        slew = abs(dlefts[i])
-                    if abs(drights[i]) > slew:
-                        slew = abs(drights[i])
-                # line search over deltax looking for best eps
-                best_eps = 0.0
-                best_loss = loss
-                worst_eps = maxSlew / slew
-                print('eps limited to ', worst_eps)
-                eps = min(eps, worst_eps)
-                for lcount in range(4):
-                    last_eps = eps
-                    for i in range(1, n):
-                        lefts[i] = base_lefts[i] - eps*dlefts[i]
-                        rights[i] = base_rights[i] - eps*drights[i]
-                    nr.poses(lefts, rights)
-                    loss = nr.loss()
-                    if loss > best_loss:
-                        worst_eps = eps
-                    else:
-                        best_eps = eps
-                        best_loss = loss
-                    if eps * 2 < worst_eps:
-                        eps *= 2
-                    else:
-                        eps = 0.5 * (best_eps + worst_eps)
-                    print(estr({'(G)eps': last_eps, 'loss': loss, 'best_eps': best_eps, 'worst_eps': worst_eps, 'new_eps': eps}))
-                
-                eps = best_eps
-                for i in range(1, n):
-                    lefts[i] = base_lefts[i] - eps*dlefts[i]
-                    rights[i] = base_rights[i] - eps*drights[i]
-
-            else:
-                if nr_count >= nr_iters or eps == 0.0:
-                    break
-                nr_count += 1
-                nr.seconds()
-                hess = nr.hessian()
-                b = np.concatenate([-nr.dlefts[1:], -nr.drights[1:]])
-                deltax = np.linalg.solve(nr.hess, b)
-                slew = np.amax(np.absolute(deltax))
-
-                # line search over deltax looking for best eps
-                best_eps = 0.0
-                best_loss = loss
-                worst_eps = min(maxSlew / slew, 2.0)
-                eps = min(eps, worst_eps)
-                for lcount in range(12):
-                    last_eps = eps
-                    lefts[1:] = base_lefts[1:] + eps * deltax[:nhess]
-                    rights[1:] = base_rights[1:] + eps * deltax[nhess:]
-                    nr.poses(lefts, rights)
-                    loss = nr.loss()
-                    if best_eps > 0.0 and lcount >= 4:
-                        break
-                    if loss > best_loss:
-                        worst_eps = eps
-                    else:
-                        best_eps = eps
-                        best_loss = loss
-                    if eps * 2 < worst_eps:
-                        eps *= 2
-                    else:
-                        eps = 0.5 * (best_eps + worst_eps)
-                    print(estr({'(N)eps': last_eps, 'loss': loss, 'best_eps': best_eps, 'worst_eps': worst_eps, 'new_eps': eps}))
-                
-                eps = best_eps
-                #eps = min(best_eps, 1.0)
-                print('nr_count ', nr_count, 'using eps: ', eps)
-                lefts[1:] = base_lefts[1:] + eps * deltax[:nhess]
-                rights[1:] = base_rights[1:] + eps * deltax[nhess:]
-        else:
-            if not lroClient.queue.empty():
-                result = lroClient.queue.get();
-                '''
-                tt = 0.0
-                for i in range(len(result.lefts)):
-                    print(fstr({
-                        't': tt,
-                        'lr': (result.lefts[i], result.rights[i]),
-                        'pose': (result.pxs[i], result.pys[i], result.thetas[i]),
-                        'twist': (result.vxs[i], result.vys[i], result.omegas[i])
-                    }))
-                    tt += dt
-                nr.poses(result.lefts, result.rights)
-                '''
-                # print(gstr({'lefts': result.lefts, 'rights': result.rights}))
+        rospy.sleep(0.001) 
+        if not lroClient.queue.empty():
+            result = lroClient.queue.get();
+            '''
+            tt = 0.0
+            for i in range(len(result.lefts)):
+                print(fstr({
+                    't': tt,
+                    'lr': (result.lefts[i], result.rights[i]),
+                    'pose': (result.pxs[i], result.pys[i], result.thetas[i]),
+                    'twist': (result.vxs[i], result.vys[i], result.omegas[i])
+                }))
+                tt += dt
+            nr.poses(result.lefts, result.rights)
+            '''
+            # print(gstr({'lefts': result.lefts, 'rights': result.rights}))
+            #print(lroClient.client.get_state(), lroClient.client.get_goal_status_text())
+            try:
                 pathPlot(result.dt, result)
-                print(fstr({'n': len(result.lefts), 'px[-1]': result.pxj[-1], 'py[-1]': result.pyj[-1], 'theta[-1]': result.thetaj[-1]}))
+                print(fstr({'n': len(result.lefts), 'px[-1]': result.pxj[-1], 'py[-1]': result.pyj[-1], 'theta[-1] deg': result.thetaj[-1]/D_TO_R}))
+            except:
+                print('Error in pathPlot')
