@@ -41,12 +41,22 @@ def main():
             rospy.logerr('set_speed(%d, %f) -> invalid motor_ID=%d', motor_ID, value, motor_ID)
             return
         
-        motor.setSpeed(speed)
-
-        if value > 0:
-            motor.run(Adafruit_MotorHAT.FORWARD)
-        else:
-            motor.run(Adafruit_MotorHAT.BACKWARD)
+        MAX_ERRORS = 4
+        success = False
+        for count in range(MAX_ERRORS):
+            try:
+                motor.setSpeed(speed)
+                if value > 0:
+                    motor.run(Adafruit_MotorHAT.FORWARD)
+                else:
+                    motor.run(Adafruit_MotorHAT.BACKWARD)
+                success = True
+            except:
+                rospy.logwarn('Motor setSpeed error, retrying')
+            if success:
+                break
+        if not success:
+            rospy.logerr('Motor setSpeed failed')
 
     # stops all motors
     def all_stop():
@@ -80,7 +90,7 @@ def main():
             set_speed(motor_right_ID, -right)
             rospy.loginfo('set speed to {:5.3f}, {:5.3f} ms: {:6.3f} time {:15.3f}'.format(left, right, (time.time() - start) * 1000., rospy.get_time()))
         except:
-            rospy.logerr(traceback.format_exc)
+            rospy.logerr(traceback.format_exc())
 
     # simple string commands (left/right/forward/backward/stop)
     def on_cmd_str(msg):
@@ -104,7 +114,7 @@ def main():
             else:
                 rospy.logerr(rospy.get_caller_id() + ' invalid cmd_str=%s', msg.data)
         except:
-            rospy.logerr(traceback.format_exc)
+            rospy.logerr(traceback.format_exc())
 
     ### pan/tilt functions
     class CenterPanTilt():
@@ -161,7 +171,7 @@ def main():
             else:
                 rospy.logwarn('Unexpected pixelring command <{}>'.format(command))
         except:
-            rospy.logerr(traceback.format_exc)
+            rospy.logerr(traceback.format_exc())
 
     BASE_SPEED = 0.4
     MAX_SPEED = 1.0
@@ -179,7 +189,7 @@ def main():
         all_stop()
 
     except:
-        rospy.logerr(traceback.format_exc)
+        rospy.logerr(traceback.format_exc())
 
     ### pan/tilt hat
     try:
@@ -189,7 +199,7 @@ def main():
         on_pantilt(CenterPanTilt)
         tf_br = tf.TransformBroadcaster()
     except:
-        rospy.logerr(traceback.format_exc)
+        rospy.logerr(traceback.format_exc())
 
     # respeaker LEDs
     try:
@@ -197,7 +207,7 @@ def main():
         # set pixelring to default listen
         pixelring.listen()
     except:
-        rospy.logerr(traceback.format_exc)
+        rospy.logerr(traceback.format_exc())
 
     # setup ros node
     rospy.init_node('drivers')
