@@ -57,9 +57,9 @@ class LrOptimizeClient:
 
     ):
         self.start = time.time()
-        self.client = actionlib.SimpleActionClient('/bdbd/lrTweak', LrOptimizeAction)
+        self.client = actionlib.SimpleActionClient('/bdbd/dynamicPath', LrOptimizeAction)
         self.client.wait_for_server()
-        self.feedback_sub = rospy.Subscriber('dynamicPath/feedback', LrResult, self.feedback_cb)
+        self.feedback_sub = rospy.Subscriber('/bdbd/dynamicPath/feedsub', LrResult, self.feedback_cb)
 
         goal = LrOptimizeGoal()
         goal.dt = dt
@@ -157,7 +157,7 @@ if __name__ == '__main__':
     #lr_model = ((1.0, 1.0, 10.0), (-1.0, 1.0, 10.0), (-1.0, 10.0, 10.0))
     start_pose = [0.0, 0.0, 0.0]
     start_twist = [0.0, 0.0, 0.0]
-    target_pose = [0.3, 0.1, D_TO_R * 180]
+    target_pose = [0.3, 0.1, -D_TO_R * 90]
     target_twist = [0.0, 0.0, 0.0]
     approach_rho = 0.05
     min_rho = 0.02
@@ -165,7 +165,7 @@ if __name__ == '__main__':
     lr_start = (0.0, 0.0)
     gauss_iters = 20
     nr_iters = 20
-    Wmax = 1.e-5
+    Wmax = 1.e-6
     #Wmax = 0.0
     Wjerk = 1.e-2
     Wback = 1.0
@@ -175,7 +175,7 @@ if __name__ == '__main__':
     NRfact = 2
     maxSlew = 2.00
     testNR = False
-    maxN = 100
+    maxN = 50
     rate = 20
 
     rospy.init_node('NewRaph')
