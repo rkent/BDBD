@@ -16,7 +16,7 @@ from bdbd_common.pathPlan2 import PathPlan
 class TfPath():
     def __init__(self,
         mmax=1.0,
-        jerkweight=.04,
+        jerkweight=0.2,
         maxweight=1.e-5
     ):
         self.mmax = mmax
@@ -86,7 +86,7 @@ class TfPath():
         self.tyb = tyb.write(0, yb)
 
         self.opt2 = keras.optimizers.Adam(learning_rate=.02)
-        self.opt1 = keras.optimizers.SGD(learning_rate=0.5)
+        self.opt1 = keras.optimizers.SGD(learning_rate=0.2)
         self.tleft = tleft
         self.tright = tright
 
@@ -95,17 +95,14 @@ class TfPath():
         (pxl, pxr, fx) = self.pp.lr_model[0]
         (pyl, pyr, fy) = self.pp.lr_model[1]
         (pol, por, fo) = self.pp.lr_model[2]
-        (xb, yb, thetab) = self.start_pose
+        thetab = self.start_pose[2]
         (vxb, vyb, omegab) = self.start_twist
         tleft = self.tleft
         tright = self.tright
 
         # robot frame velocities
-        vxr0 = math.cos(thetab) * vxb + math.sin(thetab) * vyb
-        vyr0 = -math.sin(thetab) * vxb + math.cos(thetab) * vyb
-
-        vxr = vxr0
-        vyr = vyr0
+        vxr = math.cos(thetab) * vxb + math.sin(thetab) * vyb
+        vyr = -math.sin(thetab) * vxb + math.cos(thetab) * vyb
 
         with tf.GradientTape(persistent=True) as tape:
             jerksum = 0.0
@@ -152,8 +149,8 @@ class TfPath():
         print(fstr({
             'i': self.epoch,
             'loss': loss.numpy(),
-            'jerk': jerksum.numpy(),
-            'maxs': maxsum,
+            'jerk': self.jerkweight * jerksum.numpy(),
+            'maxs': self.maxweight * maxsum,
             'x': self.txb.read(n).numpy(),
             'y': self.tyb.read(n).numpy(),
             'theta': self.tthetab.read(n).numpy(),
@@ -183,17 +180,19 @@ class TfPath():
 
         return path
 
+start_pose = [0.0, 0.0, 0.0]
 target_pose = [0.3, 0.1, 180. * D_TO_R] # x, y, theta
+start_twist = [0.0, 0.0, 0.0]
 target_twist = [0.0, 0.0, 0.0] # vx, vy, omega
 
-start_pose = [0.0, 0.0, 0.0]
-start_v = 0.2
 cruise_v = 0.25
-start_twist = [start_v, 0.0, 0.0]
 dt = 0.02
 maxsteps = 100
+eps = .004
 
 fig = plt.figure(figsize=(8,4))
+axis1 = None
+axis2 = None
 
 tfPath = TfPath()
 tfPath.setup(start_pose, start_twist, target_pose, target_twist, cruise_v, dt)
@@ -202,6 +201,7 @@ for vv in tfPath.vvs:
 
 # tweak the dynamic model
 
+path = None
 try:
     for count in range(maxsteps):
         path = tfPath.tf_step()
@@ -232,6 +232,14 @@ try:
         plt1 = fig.add_subplot(121)
         #plt1.axis([0.0, tfPath.lrs[-1]['t'], -1.5, 1.5])
         plt2 = fig.add_subplot(122)
+
+        if axis1 is not None:
+            plt1.axis(axis1)
+        if axis2 is not None:
+            plt2.axis(axis2)
+        else:
+            plt2.axis('equal')
+
         #plt2.axis([-0.00, 0.40, -0.05, 0.40])
 
         plt1.plot(tees, txs)
@@ -240,10 +248,17 @@ try:
         plt1.plot(tees, rights)
         plt1.plot(tees, tos)
 
-        plt2.axis('equal')
         plt2.plot(pxs, pys)
 
         plt.pause(0.001)
+        if axis1 is None:
+            axis1 = plt1.axis()
+        if axis2 is None:
+            axis2 = plt2.axis()
+
+        if tfPath.loss < eps:
+            break
+
     plt.waitforbuttonpress()
 
 except KeyboardInterrupt:
@@ -251,3 +266,4 @@ except KeyboardInterrupt:
 
 for p in path:
     print(fstr(p))
+
