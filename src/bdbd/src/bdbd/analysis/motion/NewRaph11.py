@@ -6,7 +6,7 @@ import rospy
 from bdbd_common.utils import fstr, gstr
 from bdbd_common.geometry import lr_est, default_lr_model, D_TO_R, transform2d
 from bdbd_common.NewRaph import NewRaph
-from bdbd_common.msg import LrOptimizeGoal, LrOptimizeAction, LrResult
+from bdbd_common.msg import LrOptimizeGoal, LrOptimizeAction, LrResults
 import actionlib
 from actionlib_msgs.msg import GoalStatus
 from bdbd_common.pathPlan2 import PathPlan
@@ -21,8 +21,8 @@ def estr(a):
 
 class LrOptimizeClient:
     def __init__(self,
-        Wmax=1.0e-3,
-        Wjerk=1.0e-3,
+        Wmax=1.0e-2,
+        Wjerk=1.0e-2,
         Wback=1.0,
         mmax=1.0,
         queue=Queue()
@@ -33,14 +33,14 @@ class LrOptimizeClient:
         self.Wback = Wback
         self.mmax = mmax
         self.queue = queue
+        self.goal = None
 
     def done_cb(self, state, r):
-        print(gstr({'done state': state, 'elapsed time': time.time() - self.start}))
-        rospy.loginfo('LrOptimize done loss {:10.5g}'.format(r.loss))
-        self.queue.put(r)
+        rospy.loginfo(gstr({'done state': GoalStatus.to_string(state), 'elapsed time': time.time() - self.start, 'loss': r.loss}))
+        if state == GoalStatus.SUCCEEDED:
+            self.queue.put(r)
 
     def feedback_cb(self, feedback):
-        #print('got feedback')
         if self.queue.empty():
             self.queue.put(feedback)
         pass
@@ -59,7 +59,7 @@ class LrOptimizeClient:
         self.start = time.time()
         self.client = actionlib.SimpleActionClient('/bdbd/dynamicPath', LrOptimizeAction)
         self.client.wait_for_server()
-        self.feedback_sub = rospy.Subscriber('/bdbd/dynamicPath/feedsub', LrResult, self.feedback_cb)
+        self.feedback_sub = rospy.Subscriber('/bdbd/dynamicPath/feedsub', LrResults, self.feedback_cb)
 
         goal = LrOptimizeGoal()
         goal.dt = dt
@@ -77,11 +77,12 @@ class LrOptimizeClient:
         goal.gaussItersMax = gaussItersMax
         goal.nrItersMax = nrItersMax
         goal.rate = rate
+        self.goal = goal
         self.client.send_goal(goal, done_cb=self.done_cb, feedback_cb=self.feedback_cb)
         rospy.loginfo('waiting for result')
 
 class PathPlot():
-    def __init__(self):
+    def __init__(self, history_rate=5):
         self.fig = plt.figure(figsize=(12,4))
         self.base_pxj = None
         self.base_pyj = None
@@ -90,7 +91,9 @@ class PathPlot():
         self.history_pyj_base = []
         self.count = 0
         self.plan_history = []
+        self.history_rate = history_rate
     def __call__(self, dt, source):
+        self.count += 1
         if self.base_frame is None:
             # save the first predicted trajectory and frame
             self.base_pxj = result.pxj
@@ -134,7 +137,7 @@ class PathPlot():
         self.history_pxj_base.append(now_pose_base[0])
         self.history_pyj_base.append(now_pose_base[1])
 
-        if self.count % 1 == 0:
+        if self.count % self.history_rate == 0:
             self.plan_history.append((pxj_base, pyj_base))
         else:
             plt2.plot(pxj_base, pyj_base)
@@ -157,7 +160,7 @@ if __name__ == '__main__':
     #lr_model = ((1.0, 1.0, 10.0), (-1.0, 1.0, 10.0), (-1.0, 10.0, 10.0))
     start_pose = [0.0, 0.0, 0.0]
     start_twist = [0.0, 0.0, 0.0]
-    target_pose = [0.3, 0.1, -D_TO_R * 90]
+    target_pose = [0.3, 0.1, D_TO_R * 90]
     target_twist = [0.0, 0.0, 0.0]
     approach_rho = 0.05
     min_rho = 0.02
@@ -176,9 +179,9 @@ if __name__ == '__main__':
     maxSlew = 2.00
     testNR = False
     maxN = 50
-    rate = 20
+    rate = 40
 
-    rospy.init_node('NewRaph')
+    rospy.init_node('NewRaph', log_level=rospy.DEBUG)
 
     nr = NewRaph()
     for count in range(3):
@@ -202,7 +205,7 @@ if __name__ == '__main__':
         else:
             break
 
-    pathPlot = PathPlot()
+    pathPlot = PathPlot(history_rate=3)
 
     # send to C++ node for processing
     lroClient = LrOptimizeClient(Wmax=Wmax, Wjerk=Wjerk, Wback=Wback, mmax=mmax)
@@ -221,7 +224,8 @@ if __name__ == '__main__':
     nr_count = 0
     eps = 1.0
     while not rospy.is_shutdown():
-        rospy.sleep(0.001) 
+        rospy.sleep(0.001)
+        plt.pause(.001)
         if not lroClient.queue.empty():
             result = lroClient.queue.get();
             '''
@@ -240,6 +244,6 @@ if __name__ == '__main__':
             #print(lroClient.client.get_state(), lroClient.client.get_goal_status_text())
             try:
                 pathPlot(result.dt, result)
-                print(fstr({'n': len(result.lefts), 'px[-1]': result.pxj[-1], 'py[-1]': result.pyj[-1], 'theta[-1] deg': result.thetaj[-1]/D_TO_R}))
+                print(fstr({'n': len(result.lefts), 'x': result.now_pose_start[0], 'y': result.now_pose_start[1], 'theta deg': result.now_pose_start[2]/D_TO_R}))
             except:
                 print('Error in pathPlot')
