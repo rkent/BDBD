@@ -156,6 +156,7 @@ def static_plan(dt,
     tt = 0.0
     tees = [tt]
     poses = [(0., 0., 0.)]
+    vv = None
     while tt < total_time:
         tt += dt
         vv = pp.v(tt)
@@ -180,7 +181,8 @@ def static_plan(dt,
         vv['right'] = right
 
     if details:
-        print('vv:' + gstr(vv))
+        if vv:
+            print('vv:' + gstr(vv))
         print('pathPlan:')
         for segment in pathPlan:
             print(fstr(segment, fmat='7.4f'))
@@ -195,19 +197,19 @@ if __name__ == '__main__':
     dt = 0.02
     start_pose = [0.0, 0.0, 0.0]
     start_twist = [0.0, 0.0, 0.0]
-    target_pose = [0.0, .4, D_TO_R * 0]
+    target_pose = [.2, .00, D_TO_R * 90]
     target_twist = [0.0, 0.0, 0.0]
-    approach_rho = 0.20
+    approach_rho = 0.30
     min_rho = 0.05
     cruise_v = 0.30
     lr_start = (0.0, 0.0)
     mmax = 1.0
-    u_time = 0.25
-    Qfact = [1, 1, 1, 10, 10, 1]
+    u_time = 0.50
+    Qfact = [1, 1, 1, 10, 1, 1]
     lr_model = default_lr_model()
     # scale vy to match omega timing
-    for i in range(3):
-        lr_model[1][i] = lr_model[1][i] * lr_model[2][2] / lr_model[1][2]
+    #for i in range(3):
+    #    lr_model[1][i] = lr_model[1][i] * lr_model[2][2] / lr_model[1][2]
     print(gstr({'lr_model': lr_model}))
     dynamicStep = DynamicStep(lr_model)
 
@@ -281,6 +283,7 @@ if __name__ == '__main__':
     print(fstr(vv))
     omega0 = vv['omega']
     s0 = vv['v']
+    print(gstr({'vv': vv}))
     # Note that "rho" is always positive, but "kappa" has the same sign as omega.
     if vv['kappa'] is None:
         sdot = 0.0
