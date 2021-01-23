@@ -3,7 +3,9 @@
 from re import L
 import numpy as np
 import control
+import copy
 import time
+import scipy
 import math
 from bdbd_common.utils import fstr, gstr
 from bdbd_common.pathPlan2 import PathPlan
@@ -32,8 +34,12 @@ class PathPlot():
         self.history_rate = history_rate
         self.history_pxrj_base = []
         self.history_pyrj_base = []
+        self.history_lefts = []
+        self.history_rights = []
+        self.history_tees= []
     def __call__(self, dt, source):
         self.count += 1
+        s = source
         if self.base_frame is None:
             # save the first predicted trajectory and frame
             self.base_pxj = source.pxwj.copy()
@@ -43,8 +49,12 @@ class PathPlot():
             self.base_pyrj = source.pyrj.copy()
             #print(gstr({'base_pxj': self.base_pxj, 'base_pyj': self.base_pyj}))
 
+        if hasattr(s, 'left') and hasattr(s, 'right') and hasattr(s, 'tee'):
+            self.history_lefts.append(s.left)
+            self.history_rights.append(s.right)
+            self.history_tees.append(s.tee)
+
         fig = self.fig
-        s = source
         if hasattr(s, 'tees'):
             tees = s.tees
         else:
@@ -67,6 +77,8 @@ class PathPlot():
 
         plt1.plot(tees, s.lefts)
         plt1.plot(tees, s.rights)
+        plt1.plot(self.history_tees, self.history_lefts, 'g+')
+        plt1.plot(self.history_tees, self.history_rights, 'r+')
         plt1.set_title('left,right')
         # plt1.plot(s.tees, s.omegaj)
 
@@ -197,21 +209,37 @@ if __name__ == '__main__':
     dt = 0.02
     start_pose = [0.0, 0.0, 0.0]
     start_twist = [0.0, 0.0, 0.0]
-    target_pose = [.2, .00, D_TO_R * 90]
+    target_pose = [.26, .52, -D_TO_R * 180]
     target_twist = [0.0, 0.0, 0.0]
     approach_rho = 0.30
     min_rho = 0.05
-    cruise_v = 0.30
+    cruise_v = 0.25
     lr_start = (0.0, 0.0)
     mmax = 1.0
     u_time = 0.50
-    Qfact = [1, 1, 1, 10, 1, 1]
+    Qfact = [1, 1, 1, 1, 1, 1]
     lr_model = default_lr_model()
     # scale vy to match omega timing
     #for i in range(3):
     #    lr_model[1][i] = lr_model[1][i] * lr_model[2][2] / lr_model[1][2]
     print(gstr({'lr_model': lr_model}))
-    dynamicStep = DynamicStep(lr_model)
+    bad_lr_model = copy.deepcopy(lr_model)
+
+    bad_lr_model[0][1] *= .9
+    bad_lr_model[0][0] *= 1.0
+    bad_lr_model[2][1] *= 1.1
+    bad_lr_model[2][0] *= 1.0
+
+    # poles for state control model
+    fact = 0.90
+    base = -2.0
+    poles = []
+    for i in range(6):
+        poles.append(base)
+        base = base * fact
+    np_poles = np.array(poles)
+
+    dynamicStep = DynamicStep(bad_lr_model)
 
     #lr_model = ((1.0, 1.0, 10.0), (-1.0, 1.0, 10.0), (-1.0, 10.0, 10.0))
     (bxl, bxr, qx) = lr_model[0]
@@ -274,7 +302,7 @@ if __name__ == '__main__':
     Q = np.identity(6)
     for i in range(len(Qfact)):
         Q[i][i] *= Qfact[i]
-    R = np.identity(2)
+    R = 1.0 * np.identity(2)
     stepCount = 0
     #for i in range(len(tees)):
 
@@ -323,9 +351,12 @@ if __name__ == '__main__':
         (pose_m, twist_m, twist_r) = dynamicStep((ctl_left, ctl_right), dt, pose_m, twist_m)
         wheel_m = transform2d(pp.wheel_r, pose_m, zero3)
 
-        if stepCount % 10 == 1:
+        if stepCount % 5 == 1:
             source.nowr_pose_map = pose_m
             source.noww_pose_map = wheel_m
+            source.tee = tt
+            source.left = ctl_left
+            source.right = ctl_right
             pathPlot(dt, source)
 
         print(fstr({'pose_m':pose_m, 'wheel_m': wheel_m, 'twist_m': twist_m, 'twist_r': twist_r}, fmat='8.5f'))
@@ -394,8 +425,20 @@ if __name__ == '__main__':
                 (0, 1, 0, 0, 0, 0),
                 (0, 0, 1, 0, 0, 0)
         ))
-        #print(gstr({'A': A, 'B': B}))
-        Kr, S, E = control.lqr(A, B, Q, R)
+        print(gstr({'A': A, 'B': B}))
+        #Kr, S, E = control.lqr(A, B, Q, R)
+        Kr = control.place_varga(A, B, np_poles)
+        # debug
+        '''
+        Kr = np.array([
+            [.191, 3.32, -.445, .592, .806, -1.53],
+            [.15, -2.65, .433, .806, -5.92, 1.37]
+        ])
+        Kr = np.matrix([
+            [-1.67580,   0.75032,   0.17497,   0.85075,   0.26784,  -1.03952],
+            [-1.72772,  -0.63308,  -0.15645,   1.35021,  -0.20051,   0.87364]
+        ])
+        '''
         print(gstr({'Kr': Kr}))
         print(gstr({'eps * Kr': np.squeeze(eps) * np.asarray(Kr)}))
         lrs = -Kr * eps

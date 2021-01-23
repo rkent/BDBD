@@ -34,8 +34,8 @@ if __name__ == '__main__':
     bol = -1.0
     '''
 
-    omega0 = 0.0
-    s0 = 0.11
+    omega0 = 0.517
+    s0 = 0.155
     A = np.array((
             (-qx, 0, 0, 0, 0, -omega0 * s0),
             (omega0, 0, s0, 0, 0, -qx * s0),
@@ -60,18 +60,28 @@ if __name__ == '__main__':
     sys = control.ss(A, B, C, D)
     w, v = eig(A)
     print(gstr((w, v)))
-    poles = np.array([-1,-1.2, -1.4, -1.6, -1.8, -2])
-    K = scipy.signal.place_poles(A, B, poles,
-     maxiter=100, method='KNV0')
-    print(gstr(K.computed_poles))
-    #T = A - B * K
-    #print(gstr(eig(T)))
     '''
+    fact = 0.95
+    base = -2.0
+    poles = []
+    for i in range(6):
+        poles.append(base)
+        base = base * fact
 
+    np_poles = np.array(poles)
+    #K = scipy.signal.place_poles(A, B, np_poles,
+    #    maxiter=100, method='YT')
+    K = control.place_varga(A, B, np_poles)
+    print(gstr({'K': K}))
+    T = A - B * np.asmatrix(K)
+    #print(gstr({'K': K.gain_matrix, 'rtol': K.rtol, 'iters': K.nb_iter, 'T': T}))
+    w, v = eig(T)
+    print(gstr({'w': w, 'v': v}))
+
+    '''
     Q = 10.0 * np.identity(6)
     R = np.identity(2)
     Kr, S, E = control.lqr(A, B, Q, R)
     print(gstr({'Kr': Kr, 'S': S, 'E': E}))
     T = A - B * Kr
-    w, v = eig(T)
-    print(gstr({'w': w, 'v': v}))
+'''
