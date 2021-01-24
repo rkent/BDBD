@@ -287,15 +287,18 @@ if __name__ == '__main__':
     source.lefts = lefts
     source.rights = rights
     # the base frame (zero at start of plan) is the wheel location
-    for pose in poses:
-        source.pxwj.append(pose[0])
-        source.pywj.append(pose[1])
-        source.thetaj.append(pose[2])
-        robot_pose_map = transform2d(pp.robot_w, pose, zero3)
-        source.pxrj.append(robot_pose_map[0])
-        source.pyrj.append(robot_pose_map[1])
+    frame_m = zero3
     source.noww_pose_map = zero3
     source.nowr_pose_map = pp.robot_w
+    for pose in poses:
+        wheel_p = pose
+        wheel_m = pose
+        robot_m = transform2d(pp.robot_w, wheel_m, frame_m)
+        source.pxwj.append(wheel_m[0])
+        source.pywj.append(wheel_m[1])
+        source.thetaj.append(wheel_m[2])
+        source.pxrj.append(robot_m[0])
+        source.pyrj.append(robot_m[1])
     pathPlot(dt, source)
 
     # now use the dynamic/control model
@@ -333,6 +336,22 @@ if __name__ == '__main__':
         print(' ')
         stepCount += 1
         tt += dt
+        '''
+        if stepCount % 1000 == 10000:
+            (tees, lefts, rights, max_segments, pp, plan_time, vxres, omegas, poses) = static_plan(dt
+                , start_pose=pose_m
+                , start_twist=twist_m
+                , target_pose=target_pose
+                , target_twist=target_twist
+                , approach_rho=approach_rho
+                , min_rho=min_rho
+                , cruise_v=cruise_v
+                , mmax=mmax
+                , u=u_time
+                , details=True
+                , vhat_start=None
+            )
+        '''
 
         R0 = (
                 (bol * (sdot + qx * s0) - bxl * (odot + qo * omega0)) /
