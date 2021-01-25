@@ -214,15 +214,16 @@ if __name__ == '__main__':
     dt = 0.02
     start_pose = [0.0, 0.0, 0.0]
     start_twist = [0.0, 0.0, 0.0]
-    target_pose = [.26, .52, -D_TO_R * 180]
+    target_pose = [.3, -.05, -D_TO_R * 180]
     target_twist = [0.0, 0.0, 0.0]
     approach_rho = 0.30
-    min_rho = 0.05
+    min_rho = 0.10
     cruise_v = 0.25
     lr_start = (0.0, 0.0)
     mmax = 1.0
     u_time = 0.50
     Qfact = [1, 1, 1, 1, 1, 1]
+    replan_rate = 10000
     lr_model = default_lr_model()
     # scale vy to match omega timing
     #for i in range(3):
@@ -230,14 +231,15 @@ if __name__ == '__main__':
     print(gstr({'lr_model': lr_model}))
     bad_lr_model = copy.deepcopy(lr_model)
 
-    bad_lr_model[0][1] *= .9
+    bad_lr_model[0][1] *= .8
     bad_lr_model[0][0] *= 1.0
-    bad_lr_model[2][1] *= 1.1
+    bad_lr_model[2][1] *= 1.2
     bad_lr_model[2][0] *= 1.0
 
     # poles for state control model
-    fact = 0.90
+    fact = 0.9
     base = -2.0
+    max_err = .10
     poles = []
     for i in range(6):
         poles.append(base)
@@ -291,12 +293,11 @@ if __name__ == '__main__':
     pose_m = zero3
     frame_m = zero3
     wheel_m = transform2d(pp.wheel_r, pose_m, zero3)
-    frame_p = wheel_m
     source.noww_pose_map = wheel_m
     source.nowr_pose_map = pose_m
     for pose in poses:
         wheel_p = pose
-        wheel_m = transform2d(wheel_p, frame_p, frame_m)
+        wheel_m = transform2d(wheel_p, pp.frame_p, frame_m)
         robot_m = transform2d(pp.robot_w, wheel_m, frame_m)
         source.pxwj.append(wheel_m[0])
         source.pywj.append(wheel_m[1])
@@ -310,12 +311,11 @@ if __name__ == '__main__':
     next_left = lefts[0]
     next_right = rights[0]
 
-    '''
     Q = np.identity(6)
     for i in range(len(Qfact)):
         Q[i][i] *= Qfact[i]
     R = 1.0 * np.identity(2)
-    '''
+
     stepCount = 0
     #for i in range(len(tees)):
 
@@ -333,14 +333,15 @@ if __name__ == '__main__':
         odot = vv['kappa'] * sdot
     corr_left = 0.0
     corr_right = 0.0
+    rms_err = 0.0
     
     tt = 0.0
     while True:
         print(' ')
         stepCount += 1
         tt += dt
-        '''
-        if stepCount % 1000 == 10000:
+        
+        if rms_err > max_err or (stepCount % replan_rate == 1 and max_segments > 1):
             (tees, lefts, rights, max_segments, pp, plan_time, vxres, omegas, poses) = static_plan(dt
                 , start_pose=pose_m
                 , start_twist=twist_m
@@ -354,7 +355,7 @@ if __name__ == '__main__':
                 , details=True
                 , vhat_start=None
             )
-        '''
+        
 
         R0 = (
                 (bol * (sdot + qx * s0) - bxl * (odot + qo * omega0)) /
@@ -379,7 +380,7 @@ if __name__ == '__main__':
         (pose_m, twist_m, twist_r) = dynamicStep((ctl_left, ctl_right), dt, pose_m, twist_m)
         wheel_m = transform2d(pp.wheel_r, pose_m, frame_m)
 
-        if stepCount % 5 == 1:
+        if stepCount % 10 == 1:
             source.nowr_pose_map = pose_m
             source.noww_pose_map = wheel_m
             source.tee = tt
@@ -433,7 +434,11 @@ if __name__ == '__main__':
             [wheel_n[1]],
             [wheel_n[2]]
         ])
-        print(fstr({'eps': eps, 'rho': rho, 'vxw_n': vyw_n}))
+        rms_err = 0.0
+        for err in eps:
+            rms_err += err**2
+        rms_err = math.sqrt(rms_err / len(eps))
+        print(fstr({'eps': eps, 'rms_err': rms_err, 'rho': rho, 'vxw_n': vyw_n}))
 
         omega0 = vv['omega']
         s0 = vv['v']
@@ -455,20 +460,11 @@ if __name__ == '__main__':
                 (0, 0, 1, 0, 0, 0)
         ))
         #print(gstr({'A': A, 'B': B}))
-        #Kr, S, E = control.lqr(A, B, Q, R)
+        #Klqr, S, E = control.lqr(A, B, Q, R)
+        #print(gstr({'Klqr': Klqr}))
         Kr = control.place_varga(A, B, np_poles)
+        print(gstr({'Kr': Kr}))
         # debug
-        '''
-        Kr = np.array([
-            [.191, 3.32, -.445, .592, .806, -1.53],
-            [.15, -2.65, .433, .806, -5.92, 1.37]
-        ])
-        Kr = np.matrix([
-            [-1.67580,   0.75032,   0.17497,   0.85075,   0.26784,  -1.03952],
-            [-1.72772,  -0.63308,  -0.15645,   1.35021,  -0.20051,   0.87364]
-        ])
-        '''
-        #print(gstr({'Kr': Kr}))
         #print(gstr({'eps * Kr': np.squeeze(eps) * np.asarray(Kr)}))
         lrs = -Kr * eps
         print({'lrs': np.squeeze(lrs)})
