@@ -44,7 +44,7 @@ class PathPlot():
             # save the first predicted trajectory and frame
             self.base_pxj = source.pxwj.copy()
             self.base_pyj = source.pywj.copy()
-            self.base_frame = source.noww_pose_map
+            self.base_frame = source.nowr_pose_map
             self.base_pxrj = source.pxrj.copy()
             self.base_pyrj = source.pyrj.copy()
             #print(gstr({'base_pxj': self.base_pxj, 'base_pyj': self.base_pyj}))
@@ -286,13 +286,17 @@ if __name__ == '__main__':
     source.tees = tees
     source.lefts = lefts
     source.rights = rights
-    # the base frame (zero at start of plan) is the wheel location
+    # the base frame (zero_map at start of plan) is the robot location. But the path
+    # plan is in plan coordinates, with 0 being the wheel start.
+    pose_m = zero3
     frame_m = zero3
-    source.noww_pose_map = zero3
-    source.nowr_pose_map = pp.robot_w
+    wheel_m = transform2d(pp.wheel_r, pose_m, zero3)
+    frame_p = wheel_m
+    source.noww_pose_map = wheel_m
+    source.nowr_pose_map = pose_m
     for pose in poses:
         wheel_p = pose
-        wheel_m = pose
+        wheel_m = transform2d(wheel_p, frame_p, frame_m)
         robot_m = transform2d(pp.robot_w, wheel_m, frame_m)
         source.pxwj.append(wheel_m[0])
         source.pywj.append(wheel_m[1])
@@ -300,9 +304,9 @@ if __name__ == '__main__':
         source.pxrj.append(robot_m[0])
         source.pyrj.append(robot_m[1])
     pathPlot(dt, source)
+    pose_m = pp.robot_w
 
     # now use the dynamic/control model
-    pose_m = source.nowr_pose_map
     twist_m = zero3
     next_left = lefts[0]
     next_right = rights[0]
@@ -396,7 +400,7 @@ if __name__ == '__main__':
         # must be represented in this frame for control calculations. The frame definition
         # is the vv wheels in map frame
         frame_n = vv['point']
-        wheel_n = transform2d(wheel_m, zero3, frame_n)
+        wheel_n = transform2d(wheel_m, frame_m, frame_n)
         theta_n = wheel_n[2]
         print(fstr({'frame_n': frame_n, 'pose_n': wheel_n}))
 
