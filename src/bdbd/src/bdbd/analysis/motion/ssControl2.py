@@ -304,7 +304,6 @@ if __name__ == '__main__':
         source.pxrj.append(robot_m[0])
         source.pyrj.append(robot_m[1])
     pathPlot(dt, source)
-    pose_m = pp.robot_w
 
     # now use the dynamic/control model
     twist_m = zero3
@@ -378,7 +377,7 @@ if __name__ == '__main__':
         print(fstr({'tt': tt, 'L0': L0, 'R0': R0, 'corr_left': corr_left, 'corr_right': corr_right, 'ctl_left': ctl_left, 'ctl_right': ctl_right, 'sdot': sdot, 'odot': odot, 'maxctl': maxctl}))
 
         (pose_m, twist_m, twist_r) = dynamicStep((ctl_left, ctl_right), dt, pose_m, twist_m)
-        wheel_m = transform2d(pp.wheel_r, pose_m, zero3)
+        wheel_m = transform2d(pp.wheel_r, pose_m, frame_m)
 
         if stepCount % 5 == 1:
             source.nowr_pose_map = pose_m
@@ -391,7 +390,8 @@ if __name__ == '__main__':
         print(fstr({'pose_m':pose_m, 'wheel_m': wheel_m, 'twist_m': twist_m, 'twist_r': twist_r}, fmat='8.5f'))
 
         # control algorithm
-        vv = pp.nextPlanPoint(dt, pose_m)
+        pose_p = transform2d(pose_m, frame_m, pp.frame_p)
+        vv = pp.nextPlanPoint(dt, pose_p)
         print(fstr({'vv': vv}))
         if vv['fraction'] > 0.999:
             break
@@ -399,10 +399,10 @@ if __name__ == '__main__':
         # vv determines the normed frame for linearized control. Current pose
         # must be represented in this frame for control calculations. The frame definition
         # is the vv wheels in map frame
-        frame_n = vv['point']
+        frame_n = transform2d(vv['point'], pp.frame_p, frame_m)
         wheel_n = transform2d(wheel_m, frame_m, frame_n)
         theta_n = wheel_n[2]
-        print(fstr({'frame_n': frame_n, 'pose_n': wheel_n}))
+        print(fstr({'frame_n': frame_n, 'wheel_n': wheel_n, 'pp.frame_p': pp.frame_p}))
 
         # twist in robot frame
         vxr_r = twist_r[0]
