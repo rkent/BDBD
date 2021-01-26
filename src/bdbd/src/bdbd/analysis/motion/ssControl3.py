@@ -233,19 +233,15 @@ if __name__ == '__main__':
     lr_start = (0.0, 0.0)
     mmax = 1.0
     u_time = 0.50
-    Qfact = [1, 1, 1, 1, 1, 1]
     replan_rate = 10000
     lr_model = default_lr_model()
-    # scale vy to match omega timing
-    #for i in range(3):
-    #    lr_model[1][i] = lr_model[1][i] * lr_model[2][2] / lr_model[1][2]
-    print(gstr({'lr_model': lr_model}))
-    bad_lr_model = copy.deepcopy(lr_model)
+    # debug TODO
+    ds_lr_model = copy.deepcopy(lr_model)
 
-    bad_lr_model[0][1] *= .8
-    bad_lr_model[0][0] *= 1.0
-    bad_lr_model[2][1] *= 1.2
-    bad_lr_model[2][0] *= 1.0
+    ds_lr_model[0][1] *= .8
+    ds_lr_model[0][0] *= 1.0
+    ds_lr_model[2][1] *= 1.2
+    ds_lr_model[2][0] *= 1.0
 
     # poles for state control model
     fact = 0.9
@@ -257,9 +253,8 @@ if __name__ == '__main__':
         base = base * fact
     np_poles = np.array(poles)
 
-    dynamicStep = DynamicStep(bad_lr_model)
+    dynamicStep = DynamicStep(ds_lr_model)
 
-    #lr_model = ((1.0, 1.0, 10.0), (-1.0, 1.0, 10.0), (-1.0, 10.0, 10.0))
     (bxl, bxr, qx) = lr_model[0]
     (bol, bor, qo)= lr_model[2]
 
@@ -322,13 +317,7 @@ if __name__ == '__main__':
     next_left = lefts[0]
     next_right = rights[0]
 
-    Q = np.identity(6)
-    for i in range(len(Qfact)):
-        Q[i][i] *= Qfact[i]
-    R = 1.0 * np.identity(2)
-
     stepCount = 0
-    #for i in range(len(tees)):
 
     # initial step
     vv = pp.v(0.0)
@@ -351,7 +340,7 @@ if __name__ == '__main__':
         print(' ')
         stepCount += 1
         tt += dt
-        
+        '''
         if rms_err > max_err or (stepCount % replan_rate == 1 and max_segments > 1):
             (tees, lefts, rights, max_segments, pp, plan_time, vxres, omegas, poses) = static_plan(dt
                 , start_pose=pose_m
@@ -366,8 +355,9 @@ if __name__ == '__main__':
                 , details=True
                 , vhat_start=None
             )
+        '''
         
-
+        # RKJ 2021-01-12 p 72
         R0 = (
                 (bol * (sdot + qx * s0) - bxl * (odot + qo * omega0)) /
                 (bol * bxr - bxl * bor)
@@ -435,7 +425,6 @@ if __name__ == '__main__':
         # vy in wheel coordinates. RKJ 2021-01-19
         vy_w = twist_r[1] - pp.dwheel * twist_r[2]
         '''
-        rho = twist_r[0] / twist_r[2] if twist_r[2] != 0.0 else None
 
         eps = np.array([
             [vxr_w - vv['v']],
@@ -449,6 +438,8 @@ if __name__ == '__main__':
         for err in eps:
             rms_err += err**2
         rms_err = math.sqrt(rms_err / len(eps))
+
+        rho = twist_r[0] / twist_r[2] if twist_r[2] != 0.0 else None
         print(fstr({'eps': eps, 'rms_err': rms_err, 'rho': rho, 'vxw_n': vyw_n}))
 
         omega0 = vv['omega']
@@ -470,20 +461,14 @@ if __name__ == '__main__':
                 (0, 1, 0, 0, 0, 0),
                 (0, 0, 1, 0, 0, 0)
         ))
-        #print(gstr({'A': A, 'B': B}))
-        #Klqr, S, E = control.lqr(A, B, Q, R)
-        #print(gstr({'Klqr': Klqr}))
         Kr = control.place_varga(A, B, np_poles)
         print(gstr({'Kr': Kr}))
         # debug
         #print(gstr({'eps * Kr': np.squeeze(eps) * np.asarray(Kr)}))
         lrs = -Kr * eps
         print({'lrs': np.squeeze(lrs)})
-        # RKJ 2021-01-12 p 72
         corr_left = lrs[0][0]
         corr_right = lrs[1][0]
 
     print('all done')
     plt.waitforbuttonpress()
-    #print('!', tees)
-    #print(fstr((tees, lefts, rights, max_segments, pp, plan_time, vxres, omegas, poses)))

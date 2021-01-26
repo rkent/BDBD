@@ -14,12 +14,10 @@ cd slycot
 sudo python setup.py install
 '''
 
-import control
-import copy
-import time
 import math
 from bdbd_common.utils import fstr, gstr
 from bdbd_common.pathPlan2 import PathPlan
+from bdbd_common.ssControl import SsControl
 from bdbd_common.geometry import lr_est, default_lr_model, D_TO_R, transform2d, DynamicStep
 import matplotlib.pyplot as plt
 try:
@@ -130,24 +128,19 @@ class PathPlot():
         #plt3.set_title('px,py vs t')
         plt.pause(.001)
 
-def static_plan(dt,
+def static_plan(
     start_pose=(0.0, 0.0, 0.0),
     start_twist=(0.0, 0.0, 0.0),
     target_pose=(0.0, 0.0, 0.0),
     target_twist=(0.0, 0.0, 0.0),
-    lr_model=default_lr_model(),
-    mmax=1.0,
     approach_rho=0.08, # radius of planned approach
     min_rho=0.02, # the smallest radius we allow in a path plan,
     cruise_v = 0.25,
-    lr_start = (0.0, 0.0),
     u=0.50,
     details=False,
-    details_v=False,
     max_segments=3,
     vhat_start=None
 ):
-
     if details:
         print(fstr({
             's_pose': start_pose,
@@ -157,17 +150,27 @@ def static_plan(dt,
         }))
     # estimate left, right to achieve the path
     pp = PathPlan(approach_rho=approach_rho, min_rho=min_rho)
+    pp.start2(start_pose, target_pose, max_segments=max_segments)
 
-    pathPlan = pp.start2(start_pose, target_pose, max_segments=max_segments)
-
-    #print(dt, start_twist[0], cruise_v, target_twist[0], u)
     # calculate start vhat from start_twist
     if vhat_start is None:
         vhat_start = abs(start_twist[0]) + abs(start_twist[2] * pp.rhohat)
-    speedPlan = pp.speedPlan(vhat_start, cruise_v, target_twist[0], u=u)
+    pp.speedPlan(vhat_start, cruise_v, target_twist[0], u=u)
 
+    return pp
+
+def plan_arrays(pp, dt,
+    start_pose=(0.0, 0.0, 0.0),
+    start_twist=(0.0, 0.0, 0.0),
+    lr_model=default_lr_model(),
+    mmax=1.0,
+    lr_start = (0.0, 0.0),
+    details=False,
+    details_v=False
+):
+ 
     total_time = 0.0
-    for seg in speedPlan:
+    for seg in pp.s_plan:
         total_time += seg['time']
 
     vxr0 = start_twist[0] * math.cos(start_pose[2]) + start_twist[1] * math.sin(start_pose[2])
@@ -212,13 +215,13 @@ def static_plan(dt,
         if vv:
             print('vv at end:' + fstr(vv))
         print('pathPlan:')
-        for segment in pathPlan:
+        for segment in pp.path:
             print(fstr(segment, fmat='7.4f'))
         print('speedPlan')
-        for segment in speedPlan:
+        for segment in pp.s_plan:
             print(fstr(segment, fmat='7.4f'))
-    num_segments = len(pathPlan)
-    return (tees, lefts, rights, num_segments, pp, total_time, vxres, omegas, poses)
+    num_segments = len(pp.plan)
+    return (tees, lefts, rights, num_segments, total_time, vxres, omegas, poses)
 
 if __name__ == '__main__':
 
@@ -233,60 +236,41 @@ if __name__ == '__main__':
     lr_start = (0.0, 0.0)
     mmax = 1.0
     u_time = 0.50
-    Qfact = [1, 1, 1, 1, 1, 1]
     replan_rate = 10000
     lr_model = default_lr_model()
-    # scale vy to match omega timing
-    #for i in range(3):
-    #    lr_model[1][i] = lr_model[1][i] * lr_model[2][2] / lr_model[1][2]
-    print(gstr({'lr_model': lr_model}))
-    bad_lr_model = copy.deepcopy(lr_model)
+    max_err = 0.10
 
-    bad_lr_model[0][1] *= .8
-    bad_lr_model[0][0] *= 1.0
-    bad_lr_model[2][1] *= 1.2
-    bad_lr_model[2][0] *= 1.0
+    ds_lr_model = default_lr_model()
 
-    # poles for state control model
-    fact = 0.9
-    base = -2.0
-    max_err = .10
-    poles = []
-    for i in range(6):
-        poles.append(base)
-        base = base * fact
-    np_poles = np.array(poles)
+    '''
+    ds_lr_model[0][1] *= .8
+    ds_lr_model[0][0] *= 1.0
+    ds_lr_model[2][1] *= 1.2
+    ds_lr_model[2][0] *= 1.0
+    '''
 
-    dynamicStep = DynamicStep(bad_lr_model)
+    dynamicStep = DynamicStep(ds_lr_model)
 
-    #lr_model = ((1.0, 1.0, 10.0), (-1.0, 1.0, 10.0), (-1.0, 10.0, 10.0))
-    (bxl, bxr, qx) = lr_model[0]
-    (bol, bor, qo)= lr_model[2]
-
-    B = np.array((
-            (bxl, bxr),
-            (0, 0),
-            (bol, bor),
-            (0, 0),
-            (0, 0),
-            (0, 0)
-    ))
+    ssControl = SsControl()
 
     zero3 = (0.0, 0.0, 0.0)
  
     pathPlot = PathPlot(history_rate=1000)
-    (tees, lefts, rights, max_segments, pp, plan_time, vxres, omegas, poses) = static_plan(dt
-        , start_pose=zero3
+    pp = static_plan(start_pose=zero3
         , start_twist=zero3
         , target_pose=target_pose
         , target_twist=target_twist
         , approach_rho=approach_rho
         , min_rho=min_rho
         , cruise_v=cruise_v
-        , mmax=mmax
         , u=u_time
         , details=True
-        , vhat_start=0.0
+    )
+    (tees, lefts, rights, max_segments, plan_time, vxres, omegas, poses) = plan_arrays(pp, dt
+        , start_pose=zero3
+        , start_twist=zero3
+        , mmax=mmax
+        , details=True
     )
     class Object():
         pass
@@ -319,16 +303,11 @@ if __name__ == '__main__':
 
     # now use the dynamic/control model
     twist_m = zero3
+    twist_r = zero3
     next_left = lefts[0]
     next_right = rights[0]
 
-    Q = np.identity(6)
-    for i in range(len(Qfact)):
-        Q[i][i] *= Qfact[i]
-    R = 1.0 * np.identity(2)
-
     stepCount = 0
-    #for i in range(len(tees)):
 
     # initial step
     vv = pp.v(0.0)
@@ -344,15 +323,22 @@ if __name__ == '__main__':
         odot = vv['kappa'] * sdot
     corr_left = 0.0
     corr_right = 0.0
-    rms_err = 0.0
     
     tt = 0.0
     while True:
         print(' ')
         stepCount += 1
         tt += dt
-        
-        if rms_err > max_err or (stepCount % replan_rate == 1 and max_segments > 1):
+
+        (lr, ctl_state) = ssControl(dt, pose_m, twist_r, pp)  
+      
+        (pose_m, twist_m, twist_r) = dynamicStep(lr, dt, pose_m, twist_m)
+        lrc = ctl_state['lr_corr']
+        lrb = ctl_state['lr_base']
+        print(fstr({'tt': tt, 'L0': lrb[0], 'R0': lrb[1], 'corr_left': lrc[0], 'corr_right': lrc[1], 'ctl_left': lr[0], 'ctl_right': lr[1], 'sdot': sdot, 'odot': odot}))
+
+
+        if ctl_state['rms_err'] > max_err:
             (tees, lefts, rights, max_segments, pp, plan_time, vxres, omegas, poses) = static_plan(dt
                 , start_pose=pose_m
                 , start_twist=twist_m
@@ -366,124 +352,20 @@ if __name__ == '__main__':
                 , details=True
                 , vhat_start=None
             )
-        
 
-        R0 = (
-                (bol * (sdot + qx * s0) - bxl * (odot + qo * omega0)) /
-                (bol * bxr - bxl * bor)
-        )
-        L0 = (
-                (bor * (sdot + qx * s0) - bxr * (odot + qo * omega0)) /
-                (bor * bxl - bxr * bol)
-        )
-
-        #corr_left = 0.0
-        #corr_right = 0.0
-        ctl_left = float(corr_left + L0)
-        ctl_right = float(corr_right + R0)
-        # correct for limits
-        maxctl = max(abs(ctl_left), abs(ctl_right))
-        if maxctl > mmax:
-            ctl_left *= mmax / maxctl
-            ctl_right *= mmax / maxctl
-        print(fstr({'tt': tt, 'L0': L0, 'R0': R0, 'corr_left': corr_left, 'corr_right': corr_right, 'ctl_left': ctl_left, 'ctl_right': ctl_right, 'sdot': sdot, 'odot': odot, 'maxctl': maxctl}))
-
-        (pose_m, twist_m, twist_r) = dynamicStep((ctl_left, ctl_right), dt, pose_m, twist_m)
         wheel_m = transform2d(pp.wheel_r, pose_m, frame_m)
 
         if stepCount % 10 == 1:
             source.nowr_pose_map = pose_m
             source.noww_pose_map = wheel_m
             source.tee = tt
-            source.left = ctl_left
-            source.right = ctl_right
+            source.left = lr[0]
+            source.right = lr[1]
             pathPlot(dt, source)
 
         print(fstr({'pose_m':pose_m, 'wheel_m': wheel_m, 'twist_m': twist_m, 'twist_r': twist_r}, fmat='8.5f'))
-
-        # control algorithm
-        pose_p = transform2d(pose_m, frame_m, pp.frame_p)
-        vv = pp.nextPlanPoint(dt, pose_p)
-        print(fstr({'vv': vv}))
-        if vv['fraction'] > 0.999:
+        if ctl_state['vv']['fraction'] > 0.999:
             break
-
-        # vv determines the normed frame for linearized control. Current pose
-        # must be represented in this frame for control calculations. The frame definition
-        # is the vv wheels in map frame
-        frame_n = transform2d(vv['point'], pp.frame_p, frame_m)
-        wheel_n = transform2d(wheel_m, frame_m, frame_n)
-        theta_n = wheel_n[2]
-        print(fstr({'frame_n': frame_n, 'wheel_n': wheel_n, 'pp.frame_p': pp.frame_p}))
-
-        # twist in robot frame
-        vxr_r = twist_r[0]
-        vyr_r = twist_r[1]
-        omega_r = twist_r[2]
-
-        # robot (measurement point) twist in normed (vv) coordinates
-        vxr_n = vxr_r * math.cos(theta_n) - vyr_r * math.sin(theta_n)
-        vyr_n = vxr_r * math.sin(theta_n) + vyr_r * math.cos(theta_n)
-        # wheel
-        vxr_w = vxr_n
-        vyw_n = vyr_n - pp.dwheel * omega_r
-
-        '''
-        vv_vx_n = vv['v'] * math.cos(vv_theta_n)
-        vv_vy_n = vv['v'] * math.sin(vv_theta_n)
-
-        # vy in wheel coordinates. RKJ 2021-01-19
-        vy_w = twist_r[1] - pp.dwheel * twist_r[2]
-        '''
-        rho = twist_r[0] / twist_r[2] if twist_r[2] != 0.0 else None
-
-        eps = np.array([
-            [vxr_w - vv['v']],
-            [vyw_n],
-            [omega_r - vv['omega']],
-            [wheel_n[0]],
-            [wheel_n[1]],
-            [wheel_n[2]]
-        ])
-        rms_err = 0.0
-        for err in eps:
-            rms_err += err**2
-        rms_err = math.sqrt(rms_err / len(eps))
-        print(fstr({'eps': eps, 'rms_err': rms_err, 'rho': rho, 'vxw_n': vyw_n}))
-
-        omega0 = vv['omega']
-        s0 = vv['v']
-        # Note that "rho" is always positive, but "kappa" has the same sign as omega.
-        if vv['kappa'] is None:
-            sdot = 0.0
-            odot = vv['direction'] * vv['d_vhat_dt'] / pp.rhohat
-        else:
-            sdot = vv['d_vhat_dt'] / (1.0 + pp.rhohat * abs(vv['kappa']))
-            odot = vv['kappa'] * sdot
-
-        s0 = s0 if s0 else 0.001
-        A = np.array((
-                (-qx, 0, 0, 0, 0, -omega0 * s0),
-                (omega0, 0, s0, 0, 0, -qx * s0),
-                (0, 0, -qo, 0, 0, 0),
-                (1, 0, 0, 0, 0, 0),
-                (0, 1, 0, 0, 0, 0),
-                (0, 0, 1, 0, 0, 0)
-        ))
-        #print(gstr({'A': A, 'B': B}))
-        #Klqr, S, E = control.lqr(A, B, Q, R)
-        #print(gstr({'Klqr': Klqr}))
-        Kr = control.place_varga(A, B, np_poles)
-        print(gstr({'Kr': Kr}))
-        # debug
-        #print(gstr({'eps * Kr': np.squeeze(eps) * np.asarray(Kr)}))
-        lrs = -Kr * eps
-        print({'lrs': np.squeeze(lrs)})
-        # RKJ 2021-01-12 p 72
-        corr_left = lrs[0][0]
-        corr_right = lrs[1][0]
 
     print('all done')
     plt.waitforbuttonpress()
-    #print('!', tees)
-    #print(fstr((tees, lefts, rights, max_segments, pp, plan_time, vxres, omegas, poses)))
