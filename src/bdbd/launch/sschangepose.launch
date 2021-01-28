@@ -1,3 +1,0 @@
-<launch>
-    <node name='sschangepose' pkg='bdbd' type='sschangepose' ns='bdbd' output='screen'/>
-</launch>

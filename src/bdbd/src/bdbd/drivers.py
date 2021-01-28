@@ -16,11 +16,15 @@ from bdbd.msg import PanTilt
 from libpantilt.PCA9685 import PCA9685
 from bdbd.libpy.respeaker.usb_pixel_ring_v2 import find
 import tf
+tf_br = tf.TransformBroadcaster()
 
 pan = 90.0
 tilt = 45.0
 
 D_TO_R = 3.1415926535 / 180. # degrees to radians
+
+motor_left_ID = 1
+motor_right_ID = 2
 
 def main():
 
@@ -173,15 +177,15 @@ def main():
         except:
             rospy.logerr(traceback.format_exc())
 
+    # setup ros node
+    rospy.init_node('drivers')
+
     BASE_SPEED = 0.4
     MAX_SPEED = 1.0
 
     # setup motor controller
     try:
         motor_driver = Adafruit_MotorHAT(i2c_bus=1)
-
-        motor_left_ID = 1
-        motor_right_ID = 2
 
         motor_left = motor_driver.getMotor(motor_left_ID)
         motor_right = motor_driver.getMotor(motor_right_ID)
@@ -197,7 +201,6 @@ def main():
         panTilt.setPWMFreq(50)
         # initialize pan and tilt
         on_pantilt(CenterPanTilt)
-        tf_br = tf.TransformBroadcaster()
     except:
         rospy.logerr(traceback.format_exc())
 
@@ -207,10 +210,8 @@ def main():
         # set pixelring to default listen
         pixelring.listen()
     except:
-        rospy.logerr(traceback.format_exc())
-
-    # setup ros node
-    rospy.init_node('drivers')
+        rospy.logwarn('pixelring publish failed')
+        rospy.logwarn(traceback.format_exc())
 
     ### Motors
     rospy.Subscriber('motors/cmd_dir', String, on_cmd_dir, tcp_nodelay=True)

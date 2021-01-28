@@ -68,7 +68,7 @@ add_message_files(
   NameProb.msg
   RoadBlocking.msg
   SpeechAction.msg
-  LeftRights.msg
+  SsResults.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -80,6 +80,7 @@ add_service_files(FILES
 ## Generate actions in the 'action' folder
 add_action_files(FILES
    ChangePose.action
+   SsMotion.action
 )
 
 ## Generate added messages and services with any dependencies listed here
@@ -218,6 +219,7 @@ catkin_install_python(PROGRAMS
   nodes/reportObjects
   nodes/sayit
   nodes/speechResponse
+  nodes/ssmotion
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

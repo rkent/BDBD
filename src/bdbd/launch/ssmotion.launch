@@ -1,0 +1,3 @@
+<launch>
+    <node name='ssmotion' pkg='bdbd' type='ssmotion' ns='bdbd' output='screen'/>
+</launch>

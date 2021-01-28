@@ -1,0 +1,29 @@
+# Robot change pose using state space control
+
+# goal definition
+geometry_msgs/Pose startPose
+geometry_msgs/Pose endPose
+geometry_msgs/Twist startTwist
+geometry_msgs/Twist endTwist
+float32 vcruise
+float32 skip # number of t265 poses to average
+bool do_motor # should we run motor directly from the action server?
+---
+# result definition
+float32 left
+float32 right
+float32 rms_err
+float32[6] eps
+float32[3] pose_m
+float32[3] twist_r
+float32 fraction
+---
+# feedback definition, same as SsResults.msg
+# suggested control action and state from sschangepose action
+float32 left
+float32 right
+float32 rms_err
+float32[6] eps
+float32[3] pose_m
+float32[3] twist_r
+float32 fraction

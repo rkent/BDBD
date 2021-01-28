@@ -1,8 +1,8 @@
 # Simple set motors
 
 DURATION = 2.0
-LEFT = .2
-RIGHT = 0
+LEFT = .0
+RIGHT = .8
 
 # Adapted from https://github.com/dusty-nv/jetbot_ros/blob/master/scripts/jetbot_motors.py
 # Adapted by R. Kent James <kent@caspia.com> for bdbd robot
