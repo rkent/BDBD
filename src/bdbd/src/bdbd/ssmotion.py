@@ -33,7 +33,7 @@ from bdbd.msg import SsResults, SsMotionFeedback, SsMotionResult, SsMotionAction
 from bdbd_common.pathPlan2 import static_plan
 from bdbd_common.utils import fstr
 from bdbd_common.ssControl import SsControl
-from bdbd_common.geometry import lr_est, default_lr_model, D_TO_R, transform2d, DynamicStep, pose3to2, twist3to2
+from bdbd_common.geometry import pose3to2, twist3to2, LrDynamicsStore
 
 from nav_msgs.msg import Odometry
 
@@ -51,7 +51,7 @@ class ChangePose():
         self.psum = [0.0, 0.0, 0.0, 0.0] # x, y, cos, sin
         self.tsum = [0.0, 0.0, 0.0]
         self.tt = 0.0
-        self.ssControl = SsControl(lr_model=((1.084, .853, 8.0), (-.535, .848, 8.0), (-6.628, 6.722, 8.0)))
+        self.ssControl = None
         self.motor_pub = None
         self.odom_sub = None
         self.results = None
@@ -71,6 +71,8 @@ class ChangePose():
             self.odom_sub = None
         if self.motor_pub:
             self.motor_pub.publish(0.0, 0.0)
+            # unfortunately rospy does not properly clean up subscribers :(
+            #self.motor_pub.unregister()
             self.motor_pub = None
 
         return
@@ -86,6 +88,11 @@ class ChangePose():
             self.motor_pub = rospy.Publisher('/bdbd/motors/cmd_raw', MotorsRaw, queue_size=10)
         else:
             self.motor_pub = None
+
+        filedir = os.path.dirname(os.path.abspath(__file__)) + '/bddata'
+        lrd = LrDynamicsStore(filedir)
+        lr_model = lrd.get_lr_model()
+        self.ssControl = SsControl(lr_model=lr_model)
 
         # convert to 2D coordinates x, y, theta. The pose coordinates are in the frame which will
         # be considered the base frame for these calculations.
@@ -158,10 +165,11 @@ class ChangePose():
         ssResults = SsResults()
 
         # damping, used mostly when replanning
-        self.new_factor = min(1.0, self.new_factor + .1)
+        self.new_factor = min(1.0, self.new_factor + .04)
 
         ssResults.left = self.new_factor * lr[0] + (1. - self.new_factor) * self.last_left
         ssResults.right = self.new_factor * lr[1] + (1. - self.new_factor) * self.last_right
+        print(fstr({'new_factor': self.new_factor, 'lr[0]': lr[0], 'last_left': self.last_left, 'left': ssResults.left}))
         self.last_left = ssResults.left
         self.last_right = ssResults.right
         ssResults.rms_err = ctl_state['rms_err']
@@ -170,7 +178,7 @@ class ChangePose():
         ssResults.twist_r = twist_r
         ssResults.fraction = ctl_state['vv']['fraction']
         if self.motor_pub:
-            self.motor_pub.publish(lr[0], lr[1])
+            self.motor_pub.publish(ssResults.left, ssResults.right)
         self.ssResultsPub.publish(ssResults)
         self._actionServer.publish_feedback(ssResults)
         self.results = ssResults
@@ -213,15 +221,15 @@ class ChangePose():
             self.motor_pub.publish(0.0, 0.0)
             self.motor_pub = None
         rospy.loginfo('Done')
-        self._actionServer.set_succeeded(self.results)
+        if self._actionServer.is_active():
+            self._actionServer.set_succeeded(self.results)
         self.results = None
 
 def main():
     rospy.init_node('ssmotion')
     rospy.loginfo('{} starting with PID {}'.format(os.path.basename(__file__), os.getpid()))
-    print('file directory', os.path.dirname(__file__))
-    exit(0)
     server = ChangePose()
+    rospy.on_shutdown(server.finish)
     rospy.spin()
 
 if __name__ == '__main__':

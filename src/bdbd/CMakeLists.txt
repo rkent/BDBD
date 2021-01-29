@@ -212,6 +212,7 @@ catkin_install_python(PROGRAMS
   nodes/explore
   nodes/gamepad
   nodes/hearit
+  nodes/lrcapture
   nodes/motors
   nodes/mtnn_faces
   nodes/pantilt

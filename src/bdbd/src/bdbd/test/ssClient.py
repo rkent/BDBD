@@ -56,11 +56,18 @@ class SsMotionClient:
         print('done status: {}\nresult:\n{}'.format(status, result))
         simple_state = self.client.wait_for_result()
         print('simple_state is {}'.format(sname(simple_state)))
-        self.odom_sub.unregister()
-        print('after unregister')
+        self.stop()
+
+    def stop(self):
+        # stop activity
+        try:
+            if self.odom_sub:
+                self.odom_sub.unregister()
+        except:
+            pass
         if self.motor_pub:
             self.motor_pub.publish(0.0, 0.0)
-        return
+        rospy.sleep(.1)
 
     def __call__(self, dx, dy, dtheta, vcruise):
         print('ssClient')
@@ -110,7 +117,7 @@ if __name__ == '__main__':
     ssMotionClient(.3, .0, 90.0 * D_TO_R, .30)
     while (not rospy.is_shutdown()):
         try:
-            rospy.sleep(20.0)
+            rospy.sleep(10.0)
             print('status: {}'.format(sname(ssMotionClient.client.simple_state)))
             rospy.signal_shutdown("Done")
         except:
