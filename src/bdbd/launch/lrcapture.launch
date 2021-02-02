@@ -1,0 +1,3 @@
+<launch>
+    <node name='lrcapture' pkg='bdbd' type='lrcapture' ns='bdbd' output='screen'/>
+</launch>

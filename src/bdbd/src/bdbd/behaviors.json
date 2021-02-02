@@ -10,5 +10,5 @@
     "chase":
         ["camera", "detectnet", "drivers", "sayit", "peoplechase"],
     "motion":
-        ["drivers", "t265min", "changepose", "transforms"]
+        ["drivers", "t265min", "ssmotion", "transforms", "lrcapture"]
 } 

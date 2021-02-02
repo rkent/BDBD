@@ -67,6 +67,7 @@ add_message_files(
   PanTilt.msg
   NameProb.msg
   RoadBlocking.msg
+  RoadBlockingN.msg
   SpeechAction.msg
   SsResults.msg
 )

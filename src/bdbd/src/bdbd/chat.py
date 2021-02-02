@@ -23,11 +23,13 @@ class Chatbot():
             except:
                 pass
             if useDialog:
+                rospy.loginfo('asking dialog for response to <{}>'.format(statement))
                 saying = self.bdbdDialog(statement, "").response
                 rospy.loginfo('bdbd/dialog response is {}'.format(saying))
             else:
+                rospy.loginfo('asking cleverbot for response to <{}>'.format(statement))
                 response = self.cleverbot.getReply(statement)
-                rospy.loginfo('chatBot response is {}'.format(response))
+                rospy.loginfo('cleverbot response is <{}>'.format(response))
                 saying = "Sorry, brain freeze"
                 if response['status_code'] == 200:
                     saying = response['output'].encode('ascii', 'ignore')
@@ -45,7 +47,7 @@ def main():
         if command not in ['chat', 'chatservice']:
             return
         statement = msg.detail
-        rospy.loginfo('chatbot will reply to <{}>'.format(statement))
+        rospy.loginfo('chat will reply to <{}>'.format(statement))
         try:
             saying = chatbot(statement)
             if command == 'chat':

@@ -63,7 +63,7 @@ class ChangePose():
         self.last_right = 0.0
 
     def preempt_cb(self):
-        print('preempted')
+        rospy.loginfo('goal preempted')
         self._actionServer.set_preempted()
         #traceback.print_stack()
         if self.odom_sub:
@@ -78,7 +78,7 @@ class ChangePose():
         return
 
     def goal_cb(self):
-        print('accept new goal')
+        rospy.loginfo('accept new goal')
         goal = self._actionServer.accept_new_goal()
         self.goal = goal
         self.last_time = None
@@ -155,8 +155,7 @@ class ChangePose():
         self.last_time = then
         lag = rospy.get_time() - then
 
-        print('\n')
-        rospy.loginfo('ssControl: ' + fstr({'lag': lag, 'dt': self.dt, 'tt': self.tt, 'pose_m': pose_m, 'twist_r': tasum}))
+        #rospy.loginfo('ssControl: ' + fstr({'lag': lag, 'dt': self.dt, 'tt': self.tt, 'pose_m': pose_m, 'twist_r': tasum}))
 
         (lr, ctl_state) = self.ssControl(self.dt, pose_m, tasum, self.pp)  
 
@@ -169,7 +168,7 @@ class ChangePose():
 
         ssResults.left = self.new_factor * lr[0] + (1. - self.new_factor) * self.last_left
         ssResults.right = self.new_factor * lr[1] + (1. - self.new_factor) * self.last_right
-        print(fstr({'new_factor': self.new_factor, 'lr[0]': lr[0], 'last_left': self.last_left, 'left': ssResults.left}))
+        #print(fstr({'new_factor': self.new_factor, 'lr[0]': lr[0], 'last_left': self.last_left, 'left': ssResults.left}))
         self.last_left = ssResults.left
         self.last_right = ssResults.right
         ssResults.rms_err = ctl_state['rms_err']
@@ -186,11 +185,11 @@ class ChangePose():
         #(pose_m, twist_m, twist_r) = dynamicStep(lr, dt, pose_m, twist_m)
         lrc = ctl_state['lr_corr']
         lrb = ctl_state['lr_base']
-        rospy.loginfo(fstr({'pos_err': pos_err, 'lag': lag, 'ctl_left': lr[0], 'ctl_right': lr[1]}))
-        rospy.loginfo(fstr({'L0': lrb[0], 'R0': lrb[1], 'corr_left': lrc[0], 'corr_right': lrc[1]}))
+        #rospy.loginfo(fstr({'pos_err': pos_err, 'lag': lag, 'ctl_left': lr[0], 'ctl_right': lr[1]}))
+        #rospy.loginfo(fstr({'L0': lrb[0], 'R0': lrb[1], 'corr_left': lrc[0], 'corr_right': lrc[1]}))
 
         if ssResults.fraction > 0.999 and self._actionServer.is_active():
-            print('fraction > 0.999, finishing goal')
+            rospy.loginfo('fraction > 0.999, finishing goal')
             self.finish()
 
         # replanning
@@ -213,7 +212,6 @@ class ChangePose():
             )
 
     def finish(self):
-        print('finish called')
         if self.odom_sub:
             self.odom_sub.unregister()
             self.odom_sub = None

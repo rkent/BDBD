@@ -10,6 +10,7 @@
 #include <sensor_msgs/point_cloud_conversion.h>
 #include <std_msgs/String.h>
 #include <bdbd/RoadBlocking.h>
+#include <bdbd/RoadBlockingN.h>
 #include <iostream>
 #include <chrono>
 #include <vector>
@@ -17,6 +18,7 @@
 #include <algorithm>
 #include <string>
 #include <stdio.h>
+#include <math.h>
 #include "libcpp/fitting3d.hpp"
 #include <Eigen/Core>
 #include <Eigen/Dense>
@@ -29,19 +31,21 @@ class DetectBlocking
     ros::NodeHandle nh_;
     ros::Subscriber pc_sub;
     ros::Publisher rb_pub;
+    ros::Publisher rbn_pub;
     const float min_depth = .25;
     const float max_depth = .55;
-    const float min_height = .07;
-    const float max_height = .14;
-    const float max_distance_road = 0.02; // distance from road plane for allowable road
-    const float min_distance_obstacle = 0.03; // distance from road plane to declare an obstacle
+    const float min_height = .08;
+    const float max_height = .12;
+    const float max_distance_road = 0.05; // distance from road plane for allowable road
+    const float min_distance_obstacle = 0.05; // distance from road plane to declare an obstacle
     const int tan_divisions = 12;
     const int depth_divisions = 12;
     const float min_tan = -0.45;
     const float max_tan = 0.45;
     const float max_obstacle = 2.0;
     const int max_points = 20000; // The maximum number of PointCloud points to process
-
+    const float delta_tan = (max_tan - min_tan) / (tan_divisions - 2.0);
+    vector<float> tan_angles;
 
     int frame_count = 0;
 
@@ -51,6 +55,14 @@ class DetectBlocking
         // Subscribe to input video feed and publish output feed
         pc_sub = nh_.subscribe("/sr305/depth/color/points", 1, &DetectBlocking::pcCb, this);
         rb_pub = nh_.advertise<bdbd::RoadBlocking>("detectBlocking/roadBlocking", 1);
+        rbn_pub = nh_.advertise<bdbd::RoadBlockingN>("detectBlocking/roadBlockingN", 1);
+
+        for (int j = 0; j < tan_divisions; j++) {
+            float division_tan = min_tan + (j - 1) * delta_tan + delta_tan/2.0;
+            float division_angle = atan(division_tan);
+            tan_angles.push_back(division_angle);
+            // cout << "j " << j << " tan " << division_tan << " angle " << division_angle << " " << tan_angles[j] << "\n";
+        }
     }
 
     ~DetectBlocking()
@@ -60,12 +72,12 @@ class DetectBlocking
 
     void pcCb(const sensor_msgs::PointCloud2ConstPtr& pc2msg)
     {
-        auto start = std::chrono::steady_clock::now();
+        auto start = chrono::steady_clock::now();
         sensor_msgs::PointCloud pcmsg;
         sensor_msgs::convertPointCloud2ToPointCloud(*pc2msg, pcmsg);
-        auto middle = std::chrono::steady_clock::now();
-        std::vector<std::vector<std::vector<geometry_msgs::Point32>>> pointMatrix(tan_divisions, vector<vector<geometry_msgs::Point32>>(depth_divisions));
-        std::vector<geometry_msgs::Point32> region_obstacles(3);
+        auto middle = chrono::steady_clock::now();
+        vector<vector<vector<geometry_msgs::Point32>>> pointMatrix(tan_divisions, vector<vector<geometry_msgs::Point32>>(depth_divisions));
+        vector<geometry_msgs::Point32> region_obstacles(3);
 
         frame_count++;
 
@@ -83,6 +95,7 @@ class DetectBlocking
             auto point = pcmsg.points[i];
             auto z = point.z;
             if (z < .001) {
+                cout << point << "\n";
                 continue;
             }
             auto y = point.y;
@@ -118,42 +131,55 @@ class DetectBlocking
 
         // Calculate the road plane
 
-        std::pair<Eigen::Vector3f, Eigen::Vector3f> plane;
-        if (eigenPoints.size() > 10) {
+        bool validPlane = false;
+        pair<Eigen::Vector3f, Eigen::Vector3f> plane;
+        if (eigenPoints.size() > 300) {
+            validPlane = true;
             plane = best_plane_from_points<Eigen::Vector3f>(eigenPoints);
         } else {
+            validPlane = false;
             plane.first = Eigen::Vector3f(0.0, (max_height - min_height)/2., 0.0);
             plane.second = Eigen::Vector3f(0.0, 1.0, 0.0);
         }
+        // plane should always point in one direction
+        if (plane.second[1] < 0.0) {
+            plane.second *= -1.0;
+        }
+        // check reasonableness of plane
 
-        //std::cout << std::fixed;
+        if (plane.second[1] < .98) {
+            validPlane = false;
+        }
+
+        //cout << fixed;
         //cout << "Plane point: " << plane.first(0) << " " << plane.first(1) << " " << plane.first(2);
+        //cout << " point count: " << eigenPoints.size() << " valid? " << validPlane;
         //cout << " normal: " << plane.second(0) << " " << plane.second(1) << " " << plane.second(2) << "\n";
 
         // Detect 1) distance to dropoff, and 2) distance to obstacle in left, center, and right
 
-        // left is region 0, center 1, right 2
-        vector<float> road_depths = {0.0, 0.0, 0.0};
-        vector<float> obstacle_depths = {max_obstacle, max_obstacle, max_obstacle};
+        // 2.0 is 2 meters, beyond the range of an sr305
+        const float BIG_DEPTH = 2.0;
+        vector<float> tan_obstacle_depth(tan_divisions, BIG_DEPTH);
+        vector<float> tan_road_start(tan_divisions, BIG_DEPTH);
+        vector<float> tan_road_end(tan_divisions, 0.0);
+        vector<bool> tan_road_continuous(tan_divisions, true); // is the road unbroken?
 
         for (int i = 0; i < depth_divisions; i++) {
-            
-            float least_region_depths[3] = {100.0, 100.0, 100.0};
-            bool road_in_regions[3] = {true, true, true};
-            
             for (int j = 0; j < tan_divisions; j++) {
-                vector<geometry_msgs::Point32> obstacles_in_region;
+                vector<geometry_msgs::Point32> obstacles_in_bucket;
+                vector<geometry_msgs::Point32> roads_in_bucket;
+                float roads_distance_sum = 0.0;
+                float obstacles_distance_sum = 0.0;
+                float roads_depth_sum = 0.0;
+                float obstacles_depth_sum = 0.0;
+                bool did_point = false;
+
                 auto points = pointMatrix[i][j];
 
-                int region;
-                if (j < tan_divisions / 3)
-                    region = 0;
-                else if (j  > 2 * tan_divisions / 3)
-                    region = 2;
-                else
-                    region = 1;
-
-                float best_cell_depth = 0.0;
+                float min_road_depth = BIG_DEPTH;
+                float max_road_depth = 0.0;
+                float min_obstacle_depth = BIG_DEPTH;
                 for (auto& point: points) {
                     if (point.z <= 0.001) {
                         continue; // not a valid datapoint
@@ -164,52 +190,94 @@ class DetectBlocking
                     auto distance = plane.second.dot(plane.first - p);
 
                     // Is this valid road?
-                    if (distance < max_distance_road) {
+                    if (validPlane && abs(distance) < max_distance_road) {
                         // This point is valid road
-                        if (point.y > min_height && point.y < max_height && point.z > min_depth && point.z < max_depth) {
-                            // global limits as diagnostics 
-                            if (distance > farthestDistance) {
-                                farthestRoad = point;
-                                farthestDistance = distance;
-                            }
-                            if (point.y < lowestRoad.y) lowestRoad = point;
-                            if (point.y > highestRoad.y) highestRoad = point;
-                        }
-                        if (point.z > best_cell_depth) {
-                            best_cell_depth = point.z;
+                        // if (point.y > min_height && point.y < max_height && point.z > min_depth && point.z < max_depth) {
+                        //if (true) {
+                        if (point.y > min_height && point.y < max_height) {
+                            roads_in_bucket.push_back(point);
+                            roads_distance_sum += distance;
+                            roads_depth_sum += point.z;
+                            max_road_depth = max(max_road_depth, point.z);
+                            min_road_depth = min(min_road_depth, point.z);
+                        } else if (!did_point) {
+                            did_point = true;
+                            // cout << "point neither obstacle nor road A (" << point.x << " " << point.y << " " << point.z << ")\n";
                         }
                     } else if (distance > min_distance_obstacle) {
-                        // This point is an obstacle
-                        obstacles_in_region.push_back(point);
+                        // This point is an obstacle (above the road plane)
+                        obstacles_in_bucket.push_back(point);
+                        obstacles_distance_sum += distance;
+                        obstacles_depth_sum += point.z;
+                        min_obstacle_depth = min(min_obstacle_depth, point.z);
+                    } else if (!did_point) {
+                        did_point = true;
+                        //cout << "point neither obstacle nor road B " << " distance: " << distance;
+                        //cout << " point: (" << point.x << " " << point.y << " " << point.z << ")\n";
                     }
-                }
-                if (best_cell_depth == 0.0) { // no road found in cell!
-                    road_in_regions[region] = false;
-                } else if (best_cell_depth < least_region_depths[region]) {
-                    least_region_depths[region] = best_cell_depth;
                 }
 
-                //if (obstacles_in_region.size() > 0) {
-                //    printf("region obstacle count: %li\n", obstacles_in_region.size());
+                //if (obstacles_in_bucket.size() > 0) {
+                //    printf("region obstacle count: %li\n", obstacles_in_bucket.size());
                 //}
+                float roads_distance = roads_in_bucket.size() ? roads_distance_sum / roads_in_bucket.size() : 0.0;
+                float roads_depth = roads_in_bucket.size() ? roads_depth_sum / roads_in_bucket.size() : 0.0;
+                float obstacles_distance = obstacles_in_bucket.size() ? obstacles_distance_sum / obstacles_in_bucket.size() : 0.0;
+                float obstacles_depth = obstacles_in_bucket.size() ? obstacles_depth_sum / obstacles_in_bucket.size() : 0.0;
+                // cout << "bucket(" << i << "," << j << ") " << " count " << points.size() << " " << " angle " << tan_angles[j];
+                // cout << " obstacles(count, dist, depth): (" << obstacles_in_bucket.size() << ',' << obstacles_distance << "," << obstacles_depth << ") ";
+                // cout << "roads(count, dist, depth): (" << roads_in_bucket.size() << ',' << roads_distance << "," << roads_depth << ")\n";
+
                 // We expect a minimum number of detected obstacle points to declare valid
-                if (obstacles_in_region.size() > 100) {
-                    for (auto point: obstacles_in_region) {
-                        if (obstacle_depths[region] == max_obstacle || obstacle_depths[region] > point.z) {
-                            obstacle_depths[region] = point.z;
-                            region_obstacles[region] = point;
-                        }
-                    }
+                if (obstacles_in_bucket.size() > 5) {
+                    tan_obstacle_depth[j] = min(tan_obstacle_depth[j], min_obstacle_depth);
                 }
-            }
-            for (int k = 0; k < 3; k++) {
-                if (road_in_regions[k]) {
-                    road_depths[k] = least_region_depths[k];
+
+                // We expect a minimum number of road points to declare valid
+                if (roads_in_bucket.size() > 5) {
+                    tan_road_start[j] = min(tan_road_start[j], min_road_depth);
+                    if (tan_road_continuous[j]) {
+                        tan_road_end[j] = max(tan_road_end[j], max_road_depth);
+                    }
+                } else {
+                    // No road, end road if it is started.
+                    if (tan_road_start[j] < BIG_DEPTH) {
+                        tan_road_continuous[j] = false;
+                    }
                 }
             }
         }
 
+        bdbd::RoadBlockingN rbn;
+        for (int j = 0; j < tan_divisions; j++) {
+            rbn.angle.push_back(tan_angles[j]);
+            rbn.obstacle_depth.push_back(tan_obstacle_depth[j]);
+            rbn.road_start.push_back(tan_road_start[j]);
+            rbn.road_end.push_back(tan_road_end[j]);
+        }
+        rbn_pub.publish(rbn);
+        // cout << rbn << "\n";
+
+        // interpret results as left, center, right regions
+        // left is region 0, center 1, right 2
+        vector<float> road_depths(3, 0.0);
+        vector<float> obstacle_depths(3, max_obstacle);
+        const float REQUIRED_DEPTH = 0.25; // the sr305 can reliably detect this close
+        for (int j = 0; j < tan_divisions; j++) {
+            int region;
+            if (j < tan_divisions / 3)
+                region = 0;
+            else if (j >= 2 * tan_divisions / 3)
+                region = 2;
+            else
+                region = 1;
+            obstacle_depths[region] = min(obstacle_depths[region], tan_obstacle_depth[j]);
+            if (tan_road_start[j] < REQUIRED_DEPTH) {
+                road_depths[region] = max(road_depths[region], tan_road_end[j]);
+            }
+        }
         bdbd::RoadBlocking rb;
+
         rb.leftRoadDepth = road_depths[0];
         rb.centerRoadDepth = road_depths[1];
         rb.rightRoadDepth = road_depths[2];
@@ -218,71 +286,6 @@ class DetectBlocking
         rb.rightObstacleDepth = obstacle_depths[2];
         rb_pub.publish(rb);
 
-        //if (frame_count % 10 != 0) {
-        //    return;
-        //}
-
-/*
-        for (int i = 0; i < 3; i++) {
-            auto point = region_obstacles[i];
-            if (point.z < 0.30 && point.z >= .001) {
-                ROS_INFO("Region %i obstacle at %6.3f, %6.3f, %6.3f", i, point.x, point.y, point.z);
-            }
-        }
-        auto l = lowestRoad;
-        auto h = highestRoad;
-        auto f = farthestRoad;
-        printf("Road limits: lowest %6.3f %6.3f %6.3f highest: %6.3f %6.3f %6.3f farthest: %6.3f @ %6.3f %6.3f %6.3f\n", l.x, l.y, l.z, h.x, h.y, h.z, farthestDistance, f.x, f.y, f.z);
-
-/*
-        auto end = std::chrono::steady_clock::now();
-
-        std::chrono::duration<double> elapsed_seconds = end-start;
-        std::chrono::duration<double> middle_seconds = middle-start;
-        std::cout << "\nmiddle time: " << middle_seconds.count() << " elapsed time: " << elapsed_seconds.count() << "s\n";
-
-        for (int k = 0; k < 3; k++) {
-            string name = k == 0 ? "left" : k == 1 ? "center" : "right";
-            cout << "Region " << name << " road_depths: " << road_depths[k] << " Obstacle depths:" << obstacle_depths[k] << "\n";
-        }
-
-/*
-        // vertical slice
-        cout << "Vertical counts: ";
-        for (int i = 0; i < depth_divisions; i++) {
-            cout << setw(5) << pointMatrix[i][tan_divisions/2].size();
-        }
-        cout << "\n";
-
-        // horizontal slice
-        cout << "Horizontal counts: ";
-        for (int j = 0; j < tan_divisions; j++) {
-            cout << setw(5) << pointMatrix[depth_divisions/2][j].size();
-        }
-        cout << "\n";
-
-        // Print out a point in each horizontal bin
-        cout << setprecision(3);
-        for (int j = 0; j < tan_divisions; j++) {
-            if (pointMatrix[depth_divisions/2][j].size() > 0) {
-                cout << "( " << pointMatrix[depth_divisions/2][j][0].x;
-                cout << " , " << pointMatrix[depth_divisions/2][j][0].y;
-                cout << " , " << pointMatrix[depth_divisions/2][j][0].z;
-                cout << " ) ";          }
-        }
-        cout << "\n";
-        // search for low-count bins
-        /*
-        for (int i = 0; i < depth_divisions; i++) {
-            for (int j = 0; j < tan_divisions; j++) {
-                auto points = pointMatrix[i][j];
-                if (points.size() == 0) {
-                    cout << "Zero count at " << i << "," << j << "\n";
-                }
-            }
-        }
-        */
-/* */
     }
 };
 
