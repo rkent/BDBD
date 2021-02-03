@@ -49,7 +49,7 @@ ROTATE_GAIN = 2.0
 BACKING_LIMIT = .06
 DISTANCE_TOLERANCE_1 = .015
 DISTANCE_TOLERANCE_2 = .100
-THETA_TOLERANCE = .05
+THETA_TOLERANCE = .10
 DURATION_MS = rospy.Duration(0, 1000000)
 
 # enums
@@ -457,7 +457,7 @@ def main():
                     command = msg.command
 
                     rospy.loginfo('explore heard: {}'.format(command))
-                    if command == 'explore':
+                    if command == 'explore' or command == 'move':
                         sayit_pub.publish('OK, start exploring')
                         objectives = [Objective(Direction.FORWARD, None)]
                     elif command == 'stop':
@@ -488,9 +488,9 @@ def main():
                 continue
 
             # should we pause for listening
-            if objectives:
-                for objective in objectives:
-                    print(objective.direction)
+            #if objectives:
+            #    for objective in objectives:
+            #        print(objective.direction)
             if LISTEN_TIME and objectives and objectives[-1].direction == Direction.FORWARD:
                 if not listening_rosrate or listening_rosrate.remaining() < rospy.Duration(0):
                     if is_listening:
@@ -502,6 +502,7 @@ def main():
                             objectives.pop(0)
                     else:
                         rospy.loginfo('Listen for commands')
+                        sayit_pub.publish('Listening for robot stop')
                         is_listening = True
                         listening_rosrate = rospy.Rate(1./LISTEN_TIME)
                         if objectives[0].direction != Direction.STOPPED:
