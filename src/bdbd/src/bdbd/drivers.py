@@ -92,7 +92,7 @@ def main():
                 right = 0.0
             set_speed(motor_left_ID,  -left)
             set_speed(motor_right_ID, -right)
-            rospy.loginfo('set speed to {:5.3f}, {:5.3f} lag ms: {:6.3f}'.format(left, right, (time.time() - start) * 1000.))
+            #rospy.loginfo('set speed to {:5.3f}, {:5.3f} lag ms: {:6.3f}'.format(left, right, (time.time() - start) * 1000.))
         except:
             rospy.logerr(traceback.format_exc())
 

@@ -38,7 +38,9 @@ REVERSE_DISTANCE = 0.10 # How far to back up after forward obstacle
 REVERSE_ANGLE = 55 # degrees to change direction after a reverse
 DYNAMIC_DELAY = 0.15 # seconds to wait after motor change before recheck of status
 MOTOR_RAMP_RATE = 0.1 # seconds for first-order motor speed ramp rate filter
-MOTOR_RAMP_TOLERANCE = 0.05 # 
+MOTOR_RAMP_TOLERANCE = 0.05 #
+LISTEN_TIME = 8 # seconds to wait to listen for commands, 0(False) to disable
+EXPLORE_TIME = 30 # seconds to explore before waiting
 
 # proportional control parameters
 THETA_GAIN = 10.0
@@ -407,6 +409,8 @@ def main():
     rate = rospy.Rate(RATE)
     last_blocking_time = None
     blocking_active = False
+    is_listening = True
+    listening_rosrate = None
 
     rospy.loginfo('{} starting with PID {}'.format(__name__, os.getpid()))
 
@@ -483,6 +487,28 @@ def main():
                 rospy.logdebug('No last_pose')
                 continue
 
+            # should we pause for listening
+            if objectives:
+                for objective in objectives:
+                    print(objective.direction)
+            if LISTEN_TIME and objectives and objectives[-1].direction == Direction.FORWARD:
+                if not listening_rosrate or listening_rosrate.remaining() < rospy.Duration(0):
+                    if is_listening:
+                        # let explore proceed
+                        rospy.loginfo('Let explore proceed')
+                        is_listening = False
+                        listening_rosrate = rospy.Rate(1./EXPLORE_TIME)
+                        while objectives[0].direction == Direction.STOPPED:
+                            objectives.pop(0)
+                    else:
+                        rospy.loginfo('Listen for commands')
+                        is_listening = True
+                        listening_rosrate = rospy.Rate(1./LISTEN_TIME)
+                        if objectives[0].direction != Direction.STOPPED:
+                            objectives.insert(0, Objective(Direction.STOPPED, None))
+            else:
+                listening_rosrate = None
+
             new_state, target_pose = getNewMovement(objectives, blocking, current_pose, last_pose, tfl)
 
             if not (last_blocking_time and last_blocking_time + MIN_TIME > time.time()):
@@ -514,11 +540,13 @@ def main():
                 actual_state = new_state
 
             # debug logging of odometry
+            '''
             if left != 0.0 and right != 0.0 and current_odometry:
                 pos = current_odometry.pose.pose.position
                 twist = current_odometry.twist.twist.linear
                 atwist = current_odometry.twist.twist.angular
                 rospy.loginfo('position: {}\nvelocity: {}\nangular: {}'.format(pos, twist, atwist))
+            '''
 
         except:
             exc = traceback.format_exc()
