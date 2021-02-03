@@ -6,7 +6,16 @@ os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/home/kent/github/rkent/beedee/s
 from google.cloud import texttospeech
 
 from pydub import AudioSegment
-import pydub.playback
+#import pydub.playback
+
+from tempfile import NamedTemporaryFile
+import subprocess
+# cloned from pydub.playback._play_with_ffplay, adding -loglevel quiet
+def rkj_play_with_ffplay(seg):
+    PLAYER = '/usr/bin/ffplay'
+    with NamedTemporaryFile("w+b", suffix=".wav") as f:
+        seg.export(f.name, "wav")
+        subprocess.call([PLAYER, "-nodisp", "-autoexit", "-hide_banner", "-loglevel", "quiet", f.name])
 
 class GoogleTTS():
     def __init__(self, language='en-AU', voiceName='en-AU-Standard-B', voiceGender='MALE'):
@@ -36,7 +45,8 @@ class GoogleTTS():
         # convert an mp3 file to wav and play
         song = AudioSegment.from_mp3(mp3_fd)
         song = song.high_pass_filter(500)
-        pydub.playback._play_with_ffplay(song)
+        #pydub.playback._play_with_ffplay(song)
+        rkj_play_with_ffplay(song)
 
 if __name__ == '__main__':
     # demo
