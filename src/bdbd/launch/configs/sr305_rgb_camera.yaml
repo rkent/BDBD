@@ -1,0 +1,41 @@
+!!python/object/new:dynamic_reconfigure.encoding.Config
+dictitems:
+  backlight_compensation: 2
+  brightness: 1
+  contrast: 50
+  enable_auto_exposure: true
+  enable_auto_white_balance: true
+  exposure: 39
+  frames_queue_size: 16
+  gain: 71
+  gamma: 299
+  groups: !!python/object/new:dynamic_reconfigure.encoding.Config
+    dictitems:
+      backlight_compensation: 2
+      brightness: 1
+      contrast: 50
+      enable_auto_exposure: true
+      enable_auto_white_balance: true
+      exposure: 39
+      frames_queue_size: 16
+      gain: 71
+      gamma: 299
+      groups: !!python/object/new:dynamic_reconfigure.encoding.Config
+        state: []
+      hue: 0
+      id: 0
+      name: Default
+      parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
+        state: []
+      parent: 0
+      saturation: 64
+      sharpness: 51
+      state: true
+      type: ''
+      white_balance: 4144.0
+    state: []
+  hue: 0
+  saturation: 64
+  sharpness: 51
+  white_balance: 4144.0
+state: []

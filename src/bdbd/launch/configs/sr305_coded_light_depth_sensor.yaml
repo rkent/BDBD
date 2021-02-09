@@ -1,0 +1,29 @@
+!!python/object/new:dynamic_reconfigure.encoding.Config
+dictitems:
+  accuracy: 2
+  confidence_threshold: 5
+  filter_option: 5
+  frames_queue_size: 1
+  groups: !!python/object/new:dynamic_reconfigure.encoding.Config
+    dictitems:
+      accuracy: 2
+      confidence_threshold: 5
+      filter_option: 5
+      frames_queue_size: 1
+      groups: !!python/object/new:dynamic_reconfigure.encoding.Config
+        state: []
+      id: 0
+      laser_power: 1
+      motion_range: 97
+      name: Default
+      parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
+        state: []
+      parent: 0
+      state: true
+      type: ''
+      visual_preset: 8
+    state: []
+  laser_power: 1
+  motion_range: 97
+  visual_preset: 8
+state: []
