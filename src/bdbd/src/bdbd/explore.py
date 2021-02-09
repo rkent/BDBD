@@ -28,7 +28,7 @@ except:
 # constants
 RATE = 10 # frequency of main loop and motion update
 MIN_TIME = 1.0 # how long to wait for a blocking message until we panic and stop
-OBSTACLE_CLOSE_CENTER = 0.20 # how close is too close for obstacle, in meters
+OBSTACLE_CLOSE_CENTER = 0.30 # how close is too close for obstacle, in meters
 OBSTACLE_CLOSE_SIDES = 0.30
 DROPOFF_CLOSE = 0.30 # how much viable road before we declare a dropoff
 HYST = 0.25 # fractional change required to change state
@@ -39,8 +39,10 @@ REVERSE_ANGLE = 55 # degrees to change direction after a reverse
 DYNAMIC_DELAY = 0.15 # seconds to wait after motor change before recheck of status
 MOTOR_RAMP_RATE = 0.1 # seconds for first-order motor speed ramp rate filter
 MOTOR_RAMP_TOLERANCE = 0.05 #
-LISTEN_TIME = 8 # seconds to wait to listen for commands, 0(False) to disable
+LISTEN_TIME = 12 # seconds to wait to listen for commands, 0(False) to disable
 EXPLORE_TIME = 30 # seconds to explore before waiting
+MAX_ERRORS = 5
+#DURATION_MS = rospy.Duration(0, 1000000)
 
 # proportional control parameters
 THETA_GAIN = 10.0
@@ -50,7 +52,6 @@ BACKING_LIMIT = .06
 DISTANCE_TOLERANCE_1 = .015
 DISTANCE_TOLERANCE_2 = .100
 THETA_TOLERANCE = .10
-DURATION_MS = rospy.Duration(0, 1000000)
 
 # enums
 class Moving(Enum):
@@ -374,8 +375,8 @@ def do_movement(moving_state, tfl, target_pose):
         left = -SPEED
     elif moving_state == Moving.TARGET_DISTANCE:
         left, right = getLR_distance(tfl, target_pose)
-        twist = tfl.lookupTwist('rear_wheels', 'map', rospy.Time(0), 100*DURATION_MS)
-        rospy.loginfo('wheels twist: {}'.format(twist))
+        #twist = tfl.lookupTwist('rear_wheels', 'map', rospy.Time(0), 100*DURATION_MS)
+        #rospy.loginfo('wheels twist: {}'.format(twist))
     elif moving_state == Moving.TARGET_THETA:
         left, right = getLR_theta(tfl, target_pose)
     else:
@@ -414,6 +415,7 @@ def main():
 
     rospy.loginfo('{} starting with PID {}'.format(__name__, os.getpid()))
 
+    error_count = 0
     while not rospy.is_shutdown():
         try:
             rate.sleep()
@@ -551,8 +553,13 @@ def main():
 
         except:
             exc = traceback.format_exc()
-            rospy.logerr('Exception caught in movement:\n%s', exc)
-            break
+            rospy.logwarn('Exception caught in movement:\n%s', exc)
+            error_count += 1
+            if error_count > MAX_ERRORS:
+                rospy.logerr('explore max errors exceeded, exiting')
+                break
+            else:
+                rospy.loginfo('explore continuing, error count {}'.format(error_count))
         
     left = 0.0
     right = 0.0

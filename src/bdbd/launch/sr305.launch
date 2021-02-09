@@ -9,10 +9,10 @@
       <arg name="align_depth"       value="false"/>
       <arg name="depth_width"       value="640"/>
       <arg name="depth_height"      value="480"/>
-      <arg name="depth_fps"         value="30"/>
-      <arg name="color_width"       value="640"/>
-      <arg name="color_height"      value="480"/>
-      <arg name="color_fps"         value="30"/>
+      <arg name="depth_fps"         value="10"/>
+      <arg name="color_width"       value="1920"/>
+      <arg name="color_height"      value="1080"/>
+      <arg name="color_fps"         value="10"/>
       <arg name="infra_width"       value="640"/>
       <arg name="infra_height"      value="480"/>
       <arg name="infra_fps"         value="30"/>
@@ -27,7 +27,7 @@
       <arg name="filters"           value="pointcloud,temporal,decimation,spatial"/>
       <arg name="tf_prefix"         value="$(arg camera)"/>
       <arg name="allow_no_texture_points" value="true"/>
-      <arg name="pointcloud_texture_stream" value="RS2_STREAM_ANY"/>  <!-- RS2_STREAM_COLOR or RS2_STREAM_ANY to avoid using texture -->
+      <arg name="pointcloud_texture_stream" value="RS2_STREAM_COLOR"/>  <!-- RS2_STREAM_COLOR or RS2_STREAM_ANY to avoid using texture -->
   
     </include>
   </group>

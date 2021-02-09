@@ -60,6 +60,7 @@ class SayIt():
                     self._talkingPub.publish(False)
                     if responseQueue:
                         responseQueue.put('done')
+                    rospy.loginfo('Done saying it')
             except:
                 rospy.logerr_once(traceback.format_exc())
 

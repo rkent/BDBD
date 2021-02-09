@@ -35,16 +35,20 @@ class DetectBlocking
     const float min_depth = .25;
     const float max_depth = .55;
     const float min_height = .08;
-    const float max_height = .12;
-    const float max_distance_road = 0.05; // distance from road plane for allowable road
+    const float max_height = .16;
+    const float max_distance_road = 0.03; // distance from road plane for allowable road
     const float min_distance_obstacle = 0.05; // distance from road plane to declare an obstacle
     const int tan_divisions = 12;
     const int depth_divisions = 12;
     const float min_tan = -0.45;
     const float max_tan = 0.45;
     const float max_obstacle = 2.0;
+    const float min_obstacle_count = 5; // point count in bucket to recognize an obstacle
+    const float min_road_count = 3; // point count in bucket to recognize road
     const int max_points = 20000; // The maximum number of PointCloud points to process
     const float delta_tan = (max_tan - min_tan) / (tan_divisions - 2.0);
+    const float REQUIRED_DEPTH = 0.30; // the sr305 can reliably detect this close
+
     vector<float> tan_angles;
 
     int frame_count = 0;
@@ -133,7 +137,7 @@ class DetectBlocking
 
         bool validPlane = false;
         pair<Eigen::Vector3f, Eigen::Vector3f> plane;
-        if (eigenPoints.size() > 300) {
+        if (eigenPoints.size() > 50) {
             validPlane = true;
             plane = best_plane_from_points<Eigen::Vector3f>(eigenPoints);
         } else {
@@ -173,6 +177,7 @@ class DetectBlocking
                 float obstacles_distance_sum = 0.0;
                 float roads_depth_sum = 0.0;
                 float obstacles_depth_sum = 0.0;
+                float roads_height_sum = 0.0;
                 bool did_point = false;
 
                 auto points = pointMatrix[i][j];
@@ -198,6 +203,7 @@ class DetectBlocking
                             roads_in_bucket.push_back(point);
                             roads_distance_sum += distance;
                             roads_depth_sum += point.z;
+                            roads_height_sum += point.y;
                             max_road_depth = max(max_road_depth, point.z);
                             min_road_depth = min(min_road_depth, point.z);
                         } else if (!did_point) {
@@ -222,19 +228,24 @@ class DetectBlocking
                 //}
                 float roads_distance = roads_in_bucket.size() ? roads_distance_sum / roads_in_bucket.size() : 0.0;
                 float roads_depth = roads_in_bucket.size() ? roads_depth_sum / roads_in_bucket.size() : 0.0;
+                float roads_height = roads_in_bucket.size() ? roads_height_sum / roads_in_bucket.size() : 0.0;
                 float obstacles_distance = obstacles_in_bucket.size() ? obstacles_distance_sum / obstacles_in_bucket.size() : 0.0;
                 float obstacles_depth = obstacles_in_bucket.size() ? obstacles_depth_sum / obstacles_in_bucket.size() : 0.0;
                 // cout << "bucket(" << i << "," << j << ") " << " count " << points.size() << " " << " angle " << tan_angles[j];
                 // cout << " obstacles(count, dist, depth): (" << obstacles_in_bucket.size() << ',' << obstacles_distance << "," << obstacles_depth << ") ";
-                // cout << "roads(count, dist, depth): (" << roads_in_bucket.size() << ',' << roads_distance << "," << roads_depth << ")\n";
+                //if (roads_in_bucket.size()) {
+                //    cout << "roads[" << i << "," << j << "] ";
+                //    cout << "(count, dist, depth, height): (" << roads_in_bucket.size() << ',';
+                //    cout << roads_distance << "," << roads_depth << "," << roads_height << ")\n";
+                //}
 
                 // We expect a minimum number of detected obstacle points to declare valid
-                if (obstacles_in_bucket.size() > 5) {
+                if (obstacles_in_bucket.size() >= min_obstacle_count) {
                     tan_obstacle_depth[j] = min(tan_obstacle_depth[j], min_obstacle_depth);
                 }
 
                 // We expect a minimum number of road points to declare valid
-                if (roads_in_bucket.size() > 5) {
+                if (roads_in_bucket.size() >= min_road_count) {
                     tan_road_start[j] = min(tan_road_start[j], min_road_depth);
                     if (tan_road_continuous[j]) {
                         tan_road_end[j] = max(tan_road_end[j], max_road_depth);
@@ -255,6 +266,10 @@ class DetectBlocking
             rbn.road_start.push_back(tan_road_start[j]);
             rbn.road_end.push_back(tan_road_end[j]);
         }
+        auto rosnow = ros::Time::now();
+        double now = (double)rosnow.sec + 1.e-9 * (double)rosnow.nsec;
+        // cout << setprecision(15) << "now sec " << rosnow.sec << " nsec " << rosnow.nsec << " double now " << now << "\n";
+        rbn.rostime = now;
         rbn_pub.publish(rbn);
         // cout << rbn << "\n";
 
@@ -262,7 +277,6 @@ class DetectBlocking
         // left is region 0, center 1, right 2
         vector<float> road_depths(3, 0.0);
         vector<float> obstacle_depths(3, max_obstacle);
-        const float REQUIRED_DEPTH = 0.25; // the sr305 can reliably detect this close
         for (int j = 0; j < tan_divisions; j++) {
             int region;
             if (j < tan_divisions / 3)
@@ -277,6 +291,7 @@ class DetectBlocking
             }
         }
         bdbd::RoadBlocking rb;
+        rb.rostime = now;
 
         rb.leftRoadDepth = road_depths[0];
         rb.centerRoadDepth = road_depths[1];

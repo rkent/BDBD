@@ -1,3 +1,4 @@
+float64 rostime
 float32 leftRoadDepth
 float32 centerRoadDepth
 float32 rightRoadDepth
