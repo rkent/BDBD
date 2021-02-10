@@ -28,7 +28,6 @@
       <arg name="tf_prefix"         value="$(arg camera)"/>
       <arg name="allow_no_texture_points" value="true"/>
       <arg name="pointcloud_texture_stream" value="RS2_STREAM_ANY"/>  <!-- RS2_STREAM_COLOR or RS2_STREAM_ANY to avoid using texture -->
-  
     </include>
   </group>
 </launch>

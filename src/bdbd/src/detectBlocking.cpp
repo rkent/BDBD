@@ -33,13 +33,14 @@ class DetectBlocking
     ros::Publisher rb_pub;
     ros::Publisher rbn_pub;
     const float min_depth = .25;
-    const float max_depth = .55;
-    const float min_height = .08;
-    const float max_height = .16;
+    const float max_depth = .75;
+    const float min_height = .07;
+    const float max_height = .17;
     const float max_distance_road = 0.03; // distance from road plane for allowable road
     const float min_distance_obstacle = 0.05; // distance from road plane to declare an obstacle
     const int tan_divisions = 12;
     const int depth_divisions = 12;
+    const int max_depth_division_plane = 6; // last depth division for plane calculation
     const float min_tan = -0.45;
     const float max_tan = 0.45;
     const float max_obstacle = 2.0;
@@ -123,11 +124,11 @@ class DetectBlocking
             pointMatrix[iz][ja].push_back(point);
 
             // save points for plane analysis
-            if (y > min_height && y < max_height) {
+            if (y > min_height && y < max_height && iz < max_depth_division_plane) {
                 // This point is possibly valid road
                 roadPointCount++;
                 // only use some points for plane calculation to reduce CPU load
-                if (roadPointCount % 10 == 0) {
+                if (roadPointCount % 5 == 0) {
                     eigenPoints.push_back(Eigen::Vector3f(x, y, z));
                 }
             }
@@ -165,19 +166,24 @@ class DetectBlocking
         // 2.0 is 2 meters, beyond the range of an sr305
         const float BIG_DEPTH = 2.0;
         vector<float> tan_obstacle_depth(tan_divisions, BIG_DEPTH);
+        vector<float> tan_obstacle_height_raw(tan_divisions, 0.0);
+        vector<float> tan_obstacle_height_relative(tan_divisions, 0.0);
         vector<float> tan_road_start(tan_divisions, BIG_DEPTH);
         vector<float> tan_road_end(tan_divisions, 0.0);
         vector<bool> tan_road_continuous(tan_divisions, true); // is the road unbroken?
+        vector<float> tan_road_height_raw(tan_divisions, 0.0);
+        vector<float> tan_road_height_relative(tan_divisions, 0.0);
 
         for (int i = 0; i < depth_divisions; i++) {
             for (int j = 0; j < tan_divisions; j++) {
                 vector<geometry_msgs::Point32> obstacles_in_bucket;
                 vector<geometry_msgs::Point32> roads_in_bucket;
-                float roads_distance_sum = 0.0;
-                float obstacles_distance_sum = 0.0;
-                float roads_depth_sum = 0.0;
-                float obstacles_depth_sum = 0.0;
-                float roads_height_sum = 0.0;
+                double roads_distance_sum = 0.0;
+                double roads_depth_sum = 0.0;
+                double roads_height_sum = 0.0;
+                double obstacles_distance_sum = 0.0;
+                double obstacles_depth_sum = 0.0;
+                double obstacles_height_sum = 0.0;
                 bool did_point = false;
 
                 auto points = pointMatrix[i][j];
@@ -215,6 +221,7 @@ class DetectBlocking
                         obstacles_in_bucket.push_back(point);
                         obstacles_distance_sum += distance;
                         obstacles_depth_sum += point.z;
+                        obstacles_height_sum += point.y;
                         min_obstacle_depth = min(min_obstacle_depth, point.z);
                     } else if (!did_point) {
                         did_point = true;
@@ -231,8 +238,16 @@ class DetectBlocking
                 float roads_height = roads_in_bucket.size() ? roads_height_sum / roads_in_bucket.size() : 0.0;
                 float obstacles_distance = obstacles_in_bucket.size() ? obstacles_distance_sum / obstacles_in_bucket.size() : 0.0;
                 float obstacles_depth = obstacles_in_bucket.size() ? obstacles_depth_sum / obstacles_in_bucket.size() : 0.0;
+                float obstacles_height = obstacles_in_bucket.size() ? obstacles_height_sum / obstacles_in_bucket.size() : 0.0;
                 // cout << "bucket(" << i << "," << j << ") " << " count " << points.size() << " " << " angle " << tan_angles[j];
-                // cout << " obstacles(count, dist, depth): (" << obstacles_in_bucket.size() << ',' << obstacles_distance << "," << obstacles_depth << ") ";
+                //if (obstacles_in_bucket.size() > 1 and obstacles_distance < 0.2) {
+                //    cout << " obstacles(j, count, dist, depth, height): ("
+                //    << j << " , "
+                //    << obstacles_in_bucket.size() << " , "
+                //    << obstacles_distance << " , "
+                //    << obstacles_depth << " , "
+                //    << obstacles_height << " )\n";
+                //}
                 //if (roads_in_bucket.size()) {
                 //    cout << "roads[" << i << "," << j << "] ";
                 //    cout << "(count, dist, depth, height): (" << roads_in_bucket.size() << ',';
@@ -242,6 +257,8 @@ class DetectBlocking
                 // We expect a minimum number of detected obstacle points to declare valid
                 if (obstacles_in_bucket.size() >= min_obstacle_count) {
                     tan_obstacle_depth[j] = min(tan_obstacle_depth[j], min_obstacle_depth);
+                    tan_obstacle_height_raw[j] = obstacles_height;
+                    tan_obstacle_height_relative[j] = obstacles_distance;
                 }
 
                 // We expect a minimum number of road points to declare valid
@@ -249,6 +266,8 @@ class DetectBlocking
                     tan_road_start[j] = min(tan_road_start[j], min_road_depth);
                     if (tan_road_continuous[j]) {
                         tan_road_end[j] = max(tan_road_end[j], max_road_depth);
+                        tan_road_height_raw[j] = roads_height;
+                        tan_road_height_relative[j] = roads_distance;
                     }
                 } else {
                     // No road, end road if it is started.
@@ -263,8 +282,12 @@ class DetectBlocking
         for (int j = 0; j < tan_divisions; j++) {
             rbn.angle.push_back(tan_angles[j]);
             rbn.obstacle_depth.push_back(tan_obstacle_depth[j]);
+            rbn.obstacle_height_raw.push_back(tan_obstacle_height_raw[j]);
+            rbn.obstacle_height_relative.push_back(tan_obstacle_height_relative[j]);
             rbn.road_start.push_back(tan_road_start[j]);
             rbn.road_end.push_back(tan_road_end[j]);
+            rbn.road_height_raw.push_back(tan_road_height_raw[j]);
+            rbn.road_height_relative.push_back(tan_road_height_relative[j]);
         }
         auto rosnow = ros::Time::now();
         double now = (double)rosnow.sec + 1.e-9 * (double)rosnow.nsec;
