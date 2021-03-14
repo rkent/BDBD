@@ -8,7 +8,7 @@ except:
 import os
 import traceback
 import time
-from bdbd.msg import PanTilt
+from bdbd_common.msg import PanTilt
 
 def main():
     rospy.init_node('peoplechase')

@@ -1,3 +1,6 @@
 <launch>
-    <node name='camera' pkg='jetbot_ros' type='jetbot_camera' ns='bdbd/pi' output='screen' />
+    <node name='pantilt_camera' pkg='jetbot_ros' type='jetbot_camera' ns='bdbd' output='screen' />
+    <!-- The image_proc node works, but it takes too much CPU
+    <node name='image_proc' pkg='image_proc' type='image_proc' ns='bdbd/pantilt_camera' output='screen' />
+    -->
 </launch>

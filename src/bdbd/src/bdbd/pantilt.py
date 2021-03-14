@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import rospy
 
-from bdbd.msg import PanTilt
+from bdbd_common.msg import PanTilt
 from libpantilt.PCA9685 import PCA9685
 panTilt = PCA9685()
 panTilt.setPWMFreq(50)

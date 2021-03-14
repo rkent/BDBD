@@ -9,6 +9,7 @@
     <!-- <node pkg="tf" type="static_transform_publisher" name="pantilt_pan_tf" args="0 0 0 0 0 0 /pantilt_base /pantilt_pan 100"/> (dynamic) -->
     <node pkg="tf" type="static_transform_publisher" name="pantilt_axis_tf" args=".027 0 .037 0 0 0 /pantilt_pan /pantilt_axis 100"/>
     <!-- <node pkg="tf" type="static_transform_publisher" name="pantilt_tilt_tf" args="0 0 0 0 0 0 /pantilt_axis_base /pantilt_tilt_cor 100"/> (dynamic) -->
-    <node pkg="tf" type="static_transform_publisher" name="pantilt_tilt_camera_tf" args=".021 0 .011 0 0 0 /pantilt_tilt /pantilt_camera 100"/>
+    <node pkg="tf" type="static_transform_publisher" name="pantilt_camera_tf" args=".021 0 .011 0 0 0 /pantilt_tilt /pantilt_camera 100"/>
+    <node pkg="tf" type="static_transform_publisher" name="pantilt_camera_optical_frame_tf" args="0 0 0 -1.571 0 -1.571 /pantilt_camera /pantilt_camera_optical_frame 100"/> 
     <node pkg="tf" type="static_transform_publisher" name="sr305_link_tf" args="0.010 0.003 0.065 0 0 0 /base_link /sr305_link 100"/>
 </launch>

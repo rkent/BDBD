@@ -23,8 +23,9 @@ https://github.com/IntelRealSense/librealsense/blob/master/third-party/libtm/lib
   <arg name="accel_fps"           default="62"/>
   <arg name="enable_gyro"         default="true"/>
   <arg name="enable_accel"        default="true"/>
+  <arg name="enable_pose"         default="true"/>
 
-  <arg name="enable_sync"           default="false"/>
+  <arg name="enable_sync"           default="true"/>
 
   <arg name="linear_accel_cov"      default="0.01"/>
   <arg name="initial_reset"         default="false"/>
@@ -46,12 +47,12 @@ https://github.com/IntelRealSense/librealsense/blob/master/third-party/libtm/lib
       <arg name="fisheye_height"           value="$(arg fisheye_height)"/>
       <arg name="enable_fisheye1"          value="$(arg enable_fisheye1)"/>
       <arg name="enable_fisheye2"          value="$(arg enable_fisheye2)"/>
-
       <arg name="fisheye_fps"              value="$(arg fisheye_fps)"/>
       <arg name="gyro_fps"                 value="$(arg gyro_fps)"/>
       <arg name="accel_fps"                value="$(arg accel_fps)"/>
       <arg name="enable_gyro"              value="$(arg enable_gyro)"/>
       <arg name="enable_accel"             value="$(arg enable_accel)"/>
+      <arg name="enable_pose"             value="$(arg enable_pose)"/>
 
       <arg name="linear_accel_cov"         value="$(arg linear_accel_cov)"/>
       <arg name="initial_reset"            value="$(arg initial_reset)"/>
@@ -60,4 +61,9 @@ https://github.com/IntelRealSense/librealsense/blob/master/third-party/libtm/lib
       <arg name="publish_odom_tf"          value="$(arg publish_odom_tf)"/>
     </include>
   </group>
+  <!-- works but takes over a full CPU, or (in docker case) too much wifi bandwidth
+  <node name='t265rect' pkg='bdbd' type='t265rect' output='screen' />
+  <machine name='ubutower' address='ubutower.dryrain.org' env-loader='/opt/bdbd_docker/sys/env.sh' user='kent'/>
+  <node machine='ubutower' name='t265rect' pkg='bdbd_docker' type='t265rect' ns='bdbd' output='screen' />
+   -->
 </launch>

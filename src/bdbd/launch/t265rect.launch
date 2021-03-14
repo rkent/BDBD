@@ -1,0 +1,4 @@
+<launch>
+    <machine name='ubutower' address='ubutower.dryrain.org' env-loader='/opt/bdbd_docker/sys/env.sh' user='kent'/>
+    <node machine='ubutower' name='t265rect' pkg='bdbd_docker' type='t265rect' ns='bdbd' output='screen' />
+</launch>

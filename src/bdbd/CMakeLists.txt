@@ -64,7 +64,6 @@ add_message_files(
   GamepadEvent.msg
   MotorsRaw.msg
   AngledText.msg
-  PanTilt.msg
   NameProb.msg
   RoadBlocking.msg
   RoadBlockingN.msg

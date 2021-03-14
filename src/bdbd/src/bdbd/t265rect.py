@@ -6,13 +6,28 @@ import os
 from sensor_msgs.msg import CameraInfo, CompressedImage
 from cv_bridge import CvBridge
 from image_geometry import PinholeCameraModel
+try:
+    from Queue import Queue
+except:
+    from queue import Queue
+from bdbd_common.messageSingle import messageSingle
 
 cvBridge = CvBridge()
 
+'''
+def messageSingle(topic, type):
+    responseQueue = Queue()
+    sub = rospy.Subscriber(topic, type, lambda msg:responseQueue.put(msg))
+    result = responseQueue.get()
+    sub.unregister()
+    return result
+'''
+
 class T265():
     def __init__(self, topic_base='/t265/fisheye1'):
-        self.info_sub = rospy.Subscriber(topic_base + '/camera_info', CameraInfo, self.info_cb, queue_size=1)
         self.topic_base = topic_base
+        camera_info_msg = messageSingle(topic_base + '/camera_info', CameraInfo)
+        self.camera_model(camera_info_msg)
         self.rect_pub = rospy.Publisher(topic_base + '/image_rect/compressed', CompressedImage, queue_size=1)
         rospy.loginfo('Getting camera_info for ' + topic_base)
 
@@ -23,13 +38,11 @@ class T265():
             pcm.K, pcm.D[:4], pcm.R, pcm.P,
             (msg.width, msg.height), cv2.CV_32FC1
         )
+        print('K\n{}\nD\n{}\nR\n{}\nP\n{}'.format(pcm.K, pcm.D[:4], pcm.R, pcm.P))
+        #PP = cv2.fisheye.estimateNewCameraMatrixForUndistortRectify(pcm.K, pcm.D[:4],
+        #    (msg.width, msg.height), pcm.R, pcm.P)
+        #print('PP\n{}\nm1{}\nm2{}'.format(PP, self.m1, self.m2))
         self.subscribe_camera()
-
-    def info_cb(self, msg):
-        rospy.loginfo('Got info\n{}'.format(msg))
-        self.info_sub.unregister()
-        self.info_sub = None
-        self.camera_model(msg)
 
     def cam_cb(self, cam_msg):
         if self.rect_pub.get_num_connections() == 0:

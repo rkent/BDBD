@@ -5,6 +5,7 @@
 import rospy
 import time
 import traceback
+import threading
 
 ### robot wheel motors
 # Adapted from https://github.com/dusty-nv/jetbot_ros/blob/master/scripts/jetbot_motors.py
@@ -12,23 +13,35 @@ import traceback
 from Adafruit_MotorHAT import Adafruit_MotorHAT
 from std_msgs.msg import String
 from bdbd.msg import MotorsRaw
-from bdbd.msg import PanTilt
+from bdbd_common.msg import PanTilt
 from libpantilt.PCA9685 import PCA9685
 from bdbd.libpy.respeaker.usb_pixel_ring_v2 import find
+try:
+    from Queue import Queue, Empty
+except:
+    from queue import Queue, Empty
+
 import tf
 tf_br = tf.TransformBroadcaster()
 
-pan = 90.0
-tilt = 45.0
-
+# these are set to slightly off center to force initial motion
+pan = 89.1
+tilt = 44.1
+PANTILT_DP = 2 # maximum degrees per interval for pan, half this for tilt
 D_TO_R = 3.1415926535 / 180. # degrees to radians
+PANTILT_RATE = 100
+
+# See RKJ 2021-03-04 p 78 for angle corrections
+PAN_CORR = 2.8
+TILT_CORR = -2.3
 
 motor_left_ID = 1
 motor_right_ID = 2
 
 def main():
 
-    # 
+    panTiltQueue = Queue()
+    #
     ### Motor functions
     #
     # sets motor speed between [-1.0, 1.0]
@@ -126,31 +139,52 @@ def main():
         pan = 90.0
         tilt = 45.0
 
-    def on_pantilt(msg):
+    # this has been slew limited on the theory that rapid slews are causing power glitches that is crashing the nano
+    def do_pantilt(panTiltRate):
         global pan
-        pan = msg.pan
         global tilt
-        tilt = msg.tilt
-        rospy.loginfo('PanTilt msg {} {}'.format(msg.pan, msg.tilt))
-        try:
-            panTilt.setRotationAngle(1, max(0.0, min(180.0, msg.pan)))
-            panTilt.setRotationAngle(0, max(0.0, min(90.0, msg.tilt)))
-            pantilt_tf_cb(None)
 
-        except:
-            rospy.logerr(traceback.format_exc())
+        while True:
+            panTiltMsg = panTiltQueue.get()
+            # use None to exit thread
+            if panTiltMsg is None:
+                break
+            rospy.loginfo('PanTilt msg {} {} current pan,tilt {} {}'.format(panTiltMsg.pan, panTiltMsg.tilt, pan, tilt))
+            target_pan = panTiltMsg.pan
+            target_tilt = panTiltMsg.tilt
+            while pan != target_pan or tilt != target_tilt:
+                if pan < target_pan:
+                    pan = min(target_pan, pan + PANTILT_DP)
+                else:
+                    pan = max(target_pan, pan - PANTILT_DP)
+
+                if tilt < target_tilt:
+                    tilt = min(target_tilt, tilt + PANTILT_DP/2)
+                else:
+                    tilt = max(target_tilt, tilt - PANTILT_DP/2)
+
+                try:
+                    panTilt.setRotationAngle(1, max(0.0, min(180.0, pan)))
+                    panTilt.setRotationAngle(0, max(0.0, min(90.0, tilt)))
+
+                except:
+                    rospy.logerr(traceback.format_exc())
+
+                pantilt_tf_cb(None)
+                panTiltRate.sleep()
 
     def pantilt_tf_cb(timerEvent):
-        global pan
-        global tilt
-
         # calculate rotations for transform
         # 1) pan
-        qpan_rot = tf.transformations.quaternion_from_euler(0., 0., (pan - 90.) * D_TO_R)
+        qpan_rot = tf.transformations.quaternion_from_euler(0., 0., (pan + PAN_CORR - 90.) * D_TO_R)
         tf_br.sendTransform((0, 0, 0), qpan_rot, rospy.Time.now(), 'pantilt_pan', 'pantilt_base')
         # 2) tilt
-        qtilt_rot = tf.transformations.quaternion_from_euler(0., (tilt - 45.) * D_TO_R, 0.0)
+        qtilt_rot = tf.transformations.quaternion_from_euler(0., (tilt + TILT_CORR - 45.) * D_TO_R, 0.0)
         tf_br.sendTransform((0, 0, 0), qtilt_rot, rospy.Time.now(), 'pantilt_tilt', 'pantilt_axis')
+
+    def on_pantilt(msg):
+        print('on_pantilt')
+        panTiltQueue.put(msg)
 
     # pixelring functions
     def on_pixelring(msg):
@@ -179,7 +213,6 @@ def main():
 
     # setup ros node
     rospy.init_node('drivers')
-
     BASE_SPEED = 0.4
     MAX_SPEED = 1.0
 
@@ -199,10 +232,13 @@ def main():
     try:
         panTilt = PCA9685()
         panTilt.setPWMFreq(50)
-        # initialize pan and tilt
-        on_pantilt(CenterPanTilt)
     except:
         rospy.logerr(traceback.format_exc())
+
+    panTiltQueue.put(CenterPanTilt)
+    panTiltRate = rospy.Rate(PANTILT_RATE)
+    panTiltThread = threading.Thread(target=do_pantilt, args=[panTiltRate])
+    panTiltThread.start()
 
     # respeaker LEDs
     try:
@@ -220,7 +256,6 @@ def main():
 
     ### Pan/Tilt
     rospy.Subscriber('pantilt', PanTilt, on_pantilt, tcp_nodelay=True)
-    rospy.Timer(rospy.Duration(0.1), pantilt_tf_cb)
 
     ### pixel ring
     rospy.Subscriber('pixelring', String, on_pixelring, tcp_nodelay=True)
@@ -234,9 +269,10 @@ def main():
         # stop motors before exiting
         all_stop()
         # center pan/tilt
-        on_pantilt(CenterPanTilt)
+        panTiltQueue.put(CenterPanTilt)
         # pixelring listen
         pixelring.listen()
+        rospy.sleep(1)
 
 if __name__ == '__main__':
     main()
