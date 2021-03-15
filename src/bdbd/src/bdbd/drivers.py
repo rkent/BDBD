@@ -14,6 +14,7 @@ from Adafruit_MotorHAT import Adafruit_MotorHAT
 from std_msgs.msg import String
 from bdbd.msg import MotorsRaw
 from bdbd_common.msg import PanTilt
+from bdbd_common.srv import PanTiltS
 from libpantilt.PCA9685 import PCA9685
 from bdbd.libpy.respeaker.usb_pixel_ring_v2 import find
 try:
@@ -61,6 +62,7 @@ def main():
         MAX_ERRORS = 4
         success = False
         for count in range(MAX_ERRORS):
+            count += 1
             try:
                 motor.setSpeed(speed)
                 if value > 0:
@@ -90,7 +92,6 @@ def main():
 
     # raw L/R motor commands (speed, speed)
     def on_cmd_raw(msg):
-        start = time.time()
         try:
             left = msg.left
             right = msg.right
@@ -105,7 +106,6 @@ def main():
                 right = 0.0
             set_speed(motor_left_ID,  -left)
             set_speed(motor_right_ID, -right)
-            #rospy.loginfo('set speed to {:5.3f}, {:5.3f} lag ms: {:6.3f}'.format(left, right, (time.time() - start) * 1000.))
         except:
             rospy.logerr(traceback.format_exc())
 
@@ -139,17 +139,23 @@ def main():
         pan = 90.0
         tilt = 45.0
 
-    # this has been slew limited on the theory that rapid slews are causing power glitches that is crashing the nano
+    def handle_panTiltS(req):
+        rospy.loginfo('PanTilt srv req {} {} current pan,tilt {} {}'.format(req.panTilt.pan, req.panTilt.tilt, pan, tilt))
+        responseQueue = Queue()
+        panTiltQueue.put([req.panTilt, responseQueue])
+        return responseQueue.get()
+
+    # this has been slew limited, originally to stop crashes but left because it is prettier motion.
     def do_pantilt(panTiltRate):
         global pan
         global tilt
 
         while True:
-            panTiltMsg = panTiltQueue.get()
+            panTiltMsg, responseQueue = panTiltQueue.get()
+            isError = False
             # use None to exit thread
             if panTiltMsg is None:
                 break
-            rospy.loginfo('PanTilt msg {} {} current pan,tilt {} {}'.format(panTiltMsg.pan, panTiltMsg.tilt, pan, tilt))
             target_pan = panTiltMsg.pan
             target_tilt = panTiltMsg.tilt
             while pan != target_pan or tilt != target_tilt:
@@ -169,9 +175,14 @@ def main():
 
                 except:
                     rospy.logerr(traceback.format_exc())
+                    isError = True
 
                 pantilt_tf_cb(None)
+                if responseQueue:
+                    responseQueue.put(isError)
                 panTiltRate.sleep()
+
+        rospy.loginfo('exiting panTilt thread')
 
     def pantilt_tf_cb(timerEvent):
         # calculate rotations for transform
@@ -183,8 +194,8 @@ def main():
         tf_br.sendTransform((0, 0, 0), qtilt_rot, rospy.Time.now(), 'pantilt_tilt', 'pantilt_axis')
 
     def on_pantilt(msg):
-        print('on_pantilt')
-        panTiltQueue.put(msg)
+        rospy.loginfo('PanTilt msg {} {} current pan,tilt {} {}'.format(msg.pan, msg.tilt, pan, tilt))
+        panTiltQueue.put([msg, None])
 
     # pixelring functions
     def on_pixelring(msg):
@@ -235,7 +246,7 @@ def main():
     except:
         rospy.logerr(traceback.format_exc())
 
-    panTiltQueue.put(CenterPanTilt)
+    panTiltQueue.put([CenterPanTilt, None])
     panTiltRate = rospy.Rate(PANTILT_RATE)
     panTiltThread = threading.Thread(target=do_pantilt, args=[panTiltRate])
     panTiltThread.start()
@@ -256,6 +267,7 @@ def main():
 
     ### Pan/Tilt
     rospy.Subscriber('pantilt', PanTilt, on_pantilt, tcp_nodelay=True)
+    panTiltService = rospy.Service('pantiltS', PanTiltS, handle_panTiltS)
 
     ### pixel ring
     rospy.Subscriber('pixelring', String, on_pixelring, tcp_nodelay=True)
@@ -269,7 +281,8 @@ def main():
         # stop motors before exiting
         all_stop()
         # center pan/tilt
-        panTiltQueue.put(CenterPanTilt)
+        panTiltQueue.put([CenterPanTilt, None])
+        panTiltQueue.put([None, None])
         # pixelring listen
         pixelring.listen()
         rospy.sleep(1)
