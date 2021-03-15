@@ -14,7 +14,7 @@ from Adafruit_MotorHAT import Adafruit_MotorHAT
 from std_msgs.msg import String
 from bdbd.msg import MotorsRaw
 from bdbd_common.msg import PanTilt
-from bdbd_common.srv import PanTiltS
+from bdbd_common.srv import GetPanTilt, SetPanTilt
 from libpantilt.PCA9685 import PCA9685
 from bdbd.libpy.respeaker.usb_pixel_ring_v2 import find
 try:
@@ -139,10 +139,10 @@ def main():
         pan = 90.0
         tilt = 45.0
 
-    def handle_panTiltS(req):
-        rospy.loginfo('PanTilt srv req {} {} current pan,tilt {} {}'.format(req.panTilt.pan, req.panTilt.tilt, pan, tilt))
+    def handle_SetPanTilt(req):
+        rospy.loginfo('SetPanTilt req {} {} current pan,tilt {} {}'.format(req.pan, req.tilt, pan, tilt))
         responseQueue = Queue()
-        panTiltQueue.put([req.panTilt, responseQueue])
+        panTiltQueue.put([req, responseQueue])
         return responseQueue.get()
 
     # this has been slew limited, originally to stop crashes but left because it is prettier motion.
@@ -152,7 +152,6 @@ def main():
 
         while True:
             panTiltMsg, responseQueue = panTiltQueue.get()
-            isError = False
             # use None to exit thread
             if panTiltMsg is None:
                 break
@@ -160,27 +159,30 @@ def main():
             target_tilt = panTiltMsg.tilt
             while pan != target_pan or tilt != target_tilt:
                 if pan < target_pan:
-                    pan = min(target_pan, pan + PANTILT_DP)
+                    npan = min(target_pan, pan + PANTILT_DP)
                 else:
-                    pan = max(target_pan, pan - PANTILT_DP)
+                    npan = max(target_pan, pan - PANTILT_DP)
 
                 if tilt < target_tilt:
-                    tilt = min(target_tilt, tilt + PANTILT_DP/2)
+                    ntilt = min(target_tilt, tilt + PANTILT_DP/2)
                 else:
-                    tilt = max(target_tilt, tilt - PANTILT_DP/2)
+                    ntilt = max(target_tilt, tilt - PANTILT_DP/2)
 
                 try:
-                    panTilt.setRotationAngle(1, max(0.0, min(180.0, pan)))
-                    panTilt.setRotationAngle(0, max(0.0, min(90.0, tilt)))
+                    panTilt.setRotationAngle(1, npan)
+                    pan = npan
+                    panTilt.setRotationAngle(0, ntilt)
+                    tilt = ntilt
 
                 except:
                     rospy.logerr(traceback.format_exc())
-                    isError = True
+                    break
 
                 pantilt_tf_cb(None)
-                if responseQueue:
-                    responseQueue.put(isError)
                 panTiltRate.sleep()
+
+            if responseQueue:
+                responseQueue.put({'pan': pan, 'tilt': tilt})
 
         rospy.loginfo('exiting panTilt thread')
 
@@ -267,7 +269,8 @@ def main():
 
     ### Pan/Tilt
     rospy.Subscriber('pantilt', PanTilt, on_pantilt, tcp_nodelay=True)
-    panTiltService = rospy.Service('pantiltS', PanTiltS, handle_panTiltS)
+    rospy.Service('set_pan_tilt', SetPanTilt, handle_SetPanTilt)
+    rospy.Service('get_pan_tilt', GetPanTilt, lambda _ : {'pan': pan, 'tilt': tilt})
 
     ### pixel ring
     rospy.Subscriber('pixelring', String, on_pixelring, tcp_nodelay=True)
