@@ -32,4 +32,5 @@
   
     </include>
   </group>
+  <include file='$(dirname)/tf_sr305.launch' />
 </launch>

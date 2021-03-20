@@ -1,0 +1,4 @@
+<launch>
+    <node pkg="tf" type="static_transform_publisher" name="t265_odom_frame_tf" args="0 0 0 0 0 0 /t265_odom_frame /map 100"/>
+    <node pkg="tf" type="static_transform_publisher" name="base_link_tf" args="-0.013 -0.019 -0.090 0 0 0 /t265_pose_frame /base_link 100"/>
+</launch>

@@ -62,4 +62,5 @@ https://github.com/IntelRealSense/librealsense/blob/master/third-party/libtm/lib
       <arg name="publish_odom_tf"          value="$(arg publish_odom_tf)"/>
     </include>
   </group>
+  <include file='$(dirname)/tf_t265.launch' />
 </launch>

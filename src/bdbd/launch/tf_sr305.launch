@@ -1,0 +1,3 @@
+<launch>
+    <node pkg="tf" type="static_transform_publisher" name="sr305_link_tf" args="0.010 0.003 0.065 0 0 0 /base_link /sr305_link 100"/>
+</launch>

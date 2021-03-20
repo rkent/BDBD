@@ -25,16 +25,22 @@ except:
 import tf
 tf_br = tf.TransformBroadcaster()
 
+# See RKJ 2021-03-04 p 78 for earlier angle corrections
+# Use bdbd_docker/test/ptcal_apriltag.py for center calibration
+# centers
+PANC = 100.0
+TILTC = 50.0
+# correction to add to raw pan, tilt to get true
+PAN_CORR = 90.0 - PANC
+TILT_CORR = 45.0 - TILTC
+
 # these are set to slightly off center to force initial motion
-pan = 89.1
-tilt = 44.1
+# pan, tilt are the raw values
+pan = PANC - 3
+tilt = TILTC - 2
 PANTILT_DP = 2 # maximum degrees per interval for pan, half this for tilt
 D_TO_R = 3.1415926535 / 180. # degrees to radians
 PANTILT_RATE = 100
-
-# See RKJ 2021-03-04 p 78 for angle corrections
-PAN_CORR = 2.8
-TILT_CORR = -2.3
 
 motor_left_ID = 1
 motor_right_ID = 2
@@ -138,9 +144,16 @@ def main():
         ''' a PanTilt message preset to center pan/tilt '''
         pan = 90.0
         tilt = 45.0
+        raw = False
+
+    def handle_GetPanTilt(req):
+        if req.raw:
+            return {'pan': pan, 'tilt': tilt, 'raw': True}
+        else:
+            return {'pan': pan + PAN_CORR, 'tilt': tilt + TILT_CORR, 'raw': False}
 
     def handle_SetPanTilt(req):
-        rospy.loginfo('SetPanTilt req {} {} current pan,tilt {} {}'.format(req.pan, req.tilt, pan, tilt))
+        rospy.loginfo('SetPanTilt req {} {} {} current pan,tilt {} {}'.format(req.pan, req.tilt, req.raw, pan, tilt))
         responseQueue = Queue()
         panTiltQueue.put([req, responseQueue])
         return responseQueue.get()
@@ -151,12 +164,23 @@ def main():
         global tilt
 
         while True:
-            panTiltMsg, responseQueue = panTiltQueue.get()
-            # use None to exit thread
-            if panTiltMsg is None:
+            panTiltMsg = None
+            while panTiltMsg is None:
+                try:
+                    panTiltMsg, responseQueue = panTiltQueue.get(timeout=1.0)
+                except Empty:
+                    pantilt_tf_cb(None)
+
+            # use False to exit thread
+            if not panTiltMsg:
                 break
-            target_pan = panTiltMsg.pan
-            target_tilt = panTiltMsg.tilt
+            if panTiltMsg.raw:
+                target_pan = panTiltMsg.pan
+                target_tilt = panTiltMsg.tilt
+            else:
+                target_pan = panTiltMsg.pan - PAN_CORR
+                target_tilt = panTiltMsg.tilt - TILT_CORR
+            rospy.loginfo('set pan tilt req (showing raw) {} {} current pan,tilt {} {}'.format(target_pan, target_tilt, pan, tilt))
             while pan != target_pan or tilt != target_tilt:
                 if pan < target_pan:
                     npan = min(target_pan, pan + PANTILT_DP)
@@ -182,7 +206,10 @@ def main():
                 panTiltRate.sleep()
 
             if responseQueue:
-                responseQueue.put({'pan': pan, 'tilt': tilt})
+                if panTiltMsg.raw:
+                    responseQueue.put({'pan': pan, 'tilt': tilt, 'raw': True})
+                else:
+                    responseQueue.put({'pan': pan + PAN_CORR, 'tilt': tilt + TILT_CORR, 'raw': False})
 
         rospy.loginfo('exiting panTilt thread')
 
@@ -196,7 +223,7 @@ def main():
         tf_br.sendTransform((0, 0, 0), qtilt_rot, rospy.Time.now(), 'pantilt_tilt', 'pantilt_axis')
 
     def on_pantilt(msg):
-        rospy.loginfo('PanTilt msg {} {} current pan,tilt {} {}'.format(msg.pan, msg.tilt, pan, tilt))
+        rospy.loginfo('PanTilt msg {} {} {} current pan,tilt {} {}'.format(msg.pan, msg.tilt, msg.raw, pan, tilt))
         panTiltQueue.put([msg, None])
 
     # pixelring functions
@@ -270,7 +297,7 @@ def main():
     ### Pan/Tilt
     rospy.Subscriber('pantilt', PanTilt, on_pantilt, tcp_nodelay=True)
     rospy.Service('set_pan_tilt', SetPanTilt, handle_SetPanTilt)
-    rospy.Service('get_pan_tilt', GetPanTilt, lambda _ : {'pan': pan, 'tilt': tilt})
+    rospy.Service('get_pan_tilt', GetPanTilt, handle_GetPanTilt)
 
     ### pixel ring
     rospy.Subscriber('pixelring', String, on_pixelring, tcp_nodelay=True)
@@ -285,7 +312,7 @@ def main():
         all_stop()
         # center pan/tilt
         panTiltQueue.put([CenterPanTilt, None])
-        panTiltQueue.put([None, None])
+        panTiltQueue.put([False, None])
         # pixelring listen
         pixelring.listen()
         rospy.sleep(1)

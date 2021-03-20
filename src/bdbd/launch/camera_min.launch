@@ -1,7 +1,7 @@
 <launch>
-    <param name='/bdbd/pantilt_camera/width' value='1280' />
-    <param name='/bdbd/pantilt_camera/height' value='720' />
-    <param name='/bdbd/pantilt_camera/framerate' value='30' />
+    <param name='/bdbd/pantilt_camera/width' value='640' />
+    <param name='/bdbd/pantilt_camera/height' value='360' />
+    <param name='/bdbd/pantilt_camera/framerate' value='10' />
     <node name='pantilt_camera' pkg='jetbot_ros' type='jetbot_camera' ns='bdbd' output='screen' />
     <!-- The image_proc node works, but it takes too much CPU
     <node name='image_proc' pkg='image_proc' type='image_proc' ns='bdbd/pantilt_camera' output='screen' />

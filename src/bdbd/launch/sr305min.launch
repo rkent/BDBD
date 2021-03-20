@@ -31,4 +31,5 @@
       <arg name="pointcloud_texture_stream" value="RS2_STREAM_ANY"/>  <!-- RS2_STREAM_COLOR or RS2_STREAM_ANY to avoid using texture -->
     </include>
   </group>
+  <include file='$(dirname)/tf_sr305.launch' />
 </launch>

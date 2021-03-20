@@ -1,3 +1,5 @@
 <launch>
     <node name='drivers' pkg='bdbd' type='drivers' ns='bdbd' output='screen'/>
+    <include file='$(dirname)/tf_pantilt.launch' />
+    <include file='$(dirname)/tf_base.launch' />
 </launch>
