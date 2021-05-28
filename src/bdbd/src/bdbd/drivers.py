@@ -28,8 +28,8 @@ tf_br = tf.TransformBroadcaster()
 # See RKJ 2021-03-04 p 78 for earlier angle corrections
 # Use bdbd_docker/test/ptcal_apriltag.py for center calibration
 # centers
-PANC = 100.0
-TILTC = 50.0
+PANC = 99.3
+TILTC = 52.5
 # correction to add to raw pan, tilt to get true
 PAN_CORR = 90.0 - PANC
 TILT_CORR = 45.0 - TILTC
@@ -41,6 +41,7 @@ tilt = TILTC - 2
 PANTILT_DP = 2 # maximum degrees per interval for pan, half this for tilt
 D_TO_R = 3.1415926535 / 180. # degrees to radians
 PANTILT_RATE = 100
+SETTLE_SECONDS = 0.10 # allow the pan tilt to settle before sending service reponse
 
 motor_left_ID = 1
 motor_right_ID = 2
@@ -206,6 +207,7 @@ def main():
                 panTiltRate.sleep()
 
             if responseQueue:
+                rospy.sleep(SETTLE_SECONDS)
                 if panTiltMsg.raw:
                     responseQueue.put({'pan': pan, 'tilt': tilt, 'raw': True})
                 else:

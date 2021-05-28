@@ -3,5 +3,4 @@
     <include file='$(dirname)/drivers.launch' />
     <include file='$(dirname)/sr305.launch' />
     <include file='$(dirname)/camera.launch' />
-    <include file='$(dirname)/object_detect.launch' />
 </launch>

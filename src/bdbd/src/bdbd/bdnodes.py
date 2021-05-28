@@ -40,8 +40,8 @@ class NodeManagement:
         rospy.loginfo('Initial behaviors: {}'.format(start_behaviors_str))
 
         # always start the remote docker service
-        mainQueue.put(['launch', 'dockers', 'start', None])
-        self.launches.add('dockers')
+        #mainQueue.put(['launch', 'dockers', 'start', None])
+        #self.launches.add('dockers')
         for behavior in start_behaviors_str.split():
             rospy.loginfo('Starting initial behavior {}'.format(behavior))
             mainQueue.put(['behavior', behavior, 'start', None])
