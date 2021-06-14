@@ -9,7 +9,7 @@ import time
 from bdbd.msg import AngledText
 from bdbd.msg import SpeechAction
 from bdbd.srv import SpeechCommand
-from bdbd.srv import NodeCommand
+from bdbd_common.srv import NodeCommand
 from std_msgs.msg import String
 from std_msgs.msg import Bool
 from libpy.Battery import Battery

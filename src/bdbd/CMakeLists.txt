@@ -27,7 +27,7 @@ find_package(catkin REQUIRED COMPONENTS
 # find_package(Boost REQUIRED COMPONENTS system)
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(realsense2 2.32.1)
+find_package(realsense2 2.47.0)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -73,7 +73,6 @@ add_message_files(
 
 ## Generate services in the 'srv' folder
 add_service_files(FILES
-   NodeCommand.srv
    SpeechCommand.srv
   )
 
@@ -205,6 +204,7 @@ target_link_libraries(
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
+  nodes/apriltag_detect
   nodes/bdnodes
   nodes/changepose
   nodes/domotors

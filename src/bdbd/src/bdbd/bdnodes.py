@@ -14,13 +14,20 @@ import rospy
 import roslaunch
 import time
 import traceback
-from bdbd.srv import NodeCommand
+from bdbd_common.srv import NodeCommand
 from bdbd_common.srv import DockerCommand
 from Queue import Queue
 import sys
 import json
 import os
+import yaml
 
+from rospy import topics
+
+topics_launchers_yaml = """
+    /bdbd/pantilt_camera/image_raw/compressed:
+        - camera
+"""
 ROS_POLL_RATE = 100 # polls per second
 FILE_POLL_TIME = 1.0 # seconds per poll
 
@@ -28,6 +35,11 @@ mainQueue = Queue()
 class NodeManagement:
     def __init__(self):
         rospy.init_node("bdnodes")
+        myname = rospy.get_name()
+
+        # load topic/launch relationships
+        self.topics_launchers = yaml.load(topics_launchers_yaml)
+        print('topic_nodes:', self.topics_launchers)
 
         # load behaviors, and watch for changes
         self.BehaviorsModTime = None
@@ -36,24 +48,26 @@ class NodeManagement:
         self.launchers = {} # the launcher objects used to start/stop nodes
         self.behaviors = set() # the requested behaviors
         self.launches = set() # the requested launches from launch request (that is, not by behavior)
+        self.topics = set() # the requested topic
         start_behaviors_str = rospy.get_param('/bdbd/behaviors', '')
         rospy.loginfo('Initial behaviors: {}'.format(start_behaviors_str))
 
         # always start the remote docker service
-        #mainQueue.put(['launch', 'dockers', 'start', None])
+        #mainQueue.put(['launch', 'dockers', 'start', myname, None])
         #self.launches.add('dockers')
         for behavior in start_behaviors_str.split():
             rospy.loginfo('Starting initial behavior {}'.format(behavior))
-            mainQueue.put(['behavior', behavior, 'start', None])
+            mainQueue.put(['behavior', behavior, 'start', myname, None])
 
         self.launchService = rospy.Service('~launch', NodeCommand, self.handle_launch)
         self.behaviorService = rospy.Service('~behavior', NodeCommand, self.handle_behavior)
+        self.topicService = rospy.Service('~topic', NodeCommand, self.handle_topic)
         rate = rospy.Rate(100)
         rospy.loginfo('Ready to process commands')
         while not rospy.is_shutdown():
             if not mainQueue.empty():
                 self.pollBehaviors()
-                req_type, name, command, responseQueue = mainQueue.get()
+                req_type, name, command, callerid, responseQueue = mainQueue.get()
                 response = None
 
                 try:
@@ -63,6 +77,9 @@ class NodeManagement:
                     elif req_type == 'behavior':
                         response = self.process_behavior(name, command)
 
+                    elif req_type == 'topic':
+                        response = self.process_topic(name, command, callerid)
+
                     else:
                         rospy.logerr('Invalid nodeManagement req_type {}'.format(req_type))
                         response = 'error'
@@ -70,7 +87,7 @@ class NodeManagement:
                 except KeyboardInterrupt:
                     break
                 except:
-                    rospy.logerr(sys.exc_info()[1])
+                    rospy.logerr(traceback.format_exc())
                     response = 'error'
                 finally:
                     if responseQueue:
@@ -104,7 +121,7 @@ class NodeManagement:
             self.launches.discard(req.name)
 
         responseQueue = Queue()
-        mainQueue.put(['launch', req.name, req.command, responseQueue])
+        mainQueue.put(['launch', req.name, req.command, req._connection_header['callerid'], responseQueue])
         response = responseQueue.get()
         print('response type: {}'.format(type(response)))
         rospy.loginfo('Launch command response: [{}] to [{} {}]'.format(response, req.name, req.command))
@@ -113,11 +130,20 @@ class NodeManagement:
     def handle_behavior(self, req):
         rospy.loginfo('Got behavior request: {} {}'.format(req.name, req.command))
         responseQueue = Queue()
-        mainQueue.put(['behavior', req.name, req.command, responseQueue])
+        mainQueue.put(['behavior', req.name, req.command, req._connection_header['callerid'], responseQueue])
         response = responseQueue.get()
         rospy.loginfo('Behavior command response: [{}] to [{} {}]'.format(response, req.name, req.command))
         return(response)
 
+    def handle_topic(self, req):
+        # ensure that node required for a topic is started
+        responseQueue = Queue()
+        rospy.loginfo('Got topic request {} for {} from {}'.format(req.command, req.name, req._connection_header['callerid']))
+        mainQueue.put(['topic', req.name, req.command, req._connection_header['callerid'], responseQueue])
+        response = responseQueue.get()
+        rospy.loginfo('Topic command response: [{}] to [{} {}]'.format(response, req.name, req.command))
+        return(response)
+        
     def process_behavior(self, behavior, command):
         try:
             if command == 'start':
@@ -140,7 +166,7 @@ class NodeManagement:
                 self.process_stops()
                 return 'stopped'
 
-            elif command == 'report':
+            elif command == 'status':
                 response = ''
                 for behavior in self.behaviors:
                     response += behavior + ','
@@ -190,7 +216,7 @@ class NodeManagement:
                     self.launchers.pop(name, None)
 
         elif command == 'shutdown' or command == 'stop':
-            self.process_stops()
+            response = self.process_stops()
 
         elif command == 'status':
             if name in self.launchers:
@@ -202,6 +228,28 @@ class NodeManagement:
             response = 'invalid'
 
         rospy.loginfo('launcher command {} for {} result {}'.format(command, name, response))
+        return response
+
+    def process_topic(self, topic, command, node):
+        response = None
+        rospy.loginfo('process topic {} {}'.format(topic, command))
+        published_topics = rospy.get_published_topics()
+        for published_topic in published_topics:
+            if published_topic[0] == topic:
+                rospy.loginfo('Found existing publisher for {}'.format(topic))
+                response = 'active'
+        if response:
+            return response
+            
+        try:
+            launchers = self.topics_launchers[topic]
+        except KeyError:
+            rospy.logwarn('Topic {} not implemented'.format(topic))
+            return 'invalid'
+
+        rospy.loginfo('found topic launcher configuration for topic {}: {}'.format(topic, launchers))
+        response =  self.process_launch(launchers[0], command)
+
         return response
 
     def process_stops(self):
@@ -226,6 +274,7 @@ class NodeManagement:
                 self.launchers.pop(launch)
             else:
                 rospy.loginfo('continuing {}'.format(launch))
+        return 'stopped'
 
 def main():
     NodeManagement()
