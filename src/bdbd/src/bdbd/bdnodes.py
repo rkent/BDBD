@@ -12,6 +12,7 @@
 
 import rospy
 import roslaunch
+import rostopic
 import time
 import traceback
 from bdbd_common.srv import NodeCommand
@@ -22,14 +23,15 @@ import json
 import os
 import yaml
 
-from rospy import topics
-
 topics_launchers_yaml = """
     /bdbd/pantilt_camera/image_raw/compressed:
         - camera
+    /t265/fisheye1/image_raw/compressed:
+        - t265
+    /t265/odom/sample:
+        - t265
 """
-ROS_POLL_RATE = 100 # polls per second
-FILE_POLL_TIME = 1.0 # seconds per poll
+NODE_POLL_TIME = 5.0 # seconds between polls to stop nodes if no longer needed
 
 mainQueue = Queue()
 class NodeManagement:
@@ -48,7 +50,8 @@ class NodeManagement:
         self.launchers = {} # the launcher objects used to start/stop nodes
         self.behaviors = set() # the requested behaviors
         self.launches = set() # the requested launches from launch request (that is, not by behavior)
-        self.topics = set() # the requested topic
+        self.topics = {} # the requested topics
+        self.topic_launches = set() # the requested launches from topics
         start_behaviors_str = rospy.get_param('/bdbd/behaviors', '')
         rospy.loginfo('Initial behaviors: {}'.format(start_behaviors_str))
 
@@ -63,8 +66,12 @@ class NodeManagement:
         self.behaviorService = rospy.Service('~behavior', NodeCommand, self.handle_behavior)
         self.topicService = rospy.Service('~topic', NodeCommand, self.handle_topic)
         rate = rospy.Rate(100)
+        last_node_check = rospy.get_time()
         rospy.loginfo('Ready to process commands')
         while not rospy.is_shutdown():
+            if rospy.get_time() - last_node_check > NODE_POLL_TIME:
+                #rospy.loginfo('Checking for stopped subscriber nodes')
+                last_node_check = rospy.get_time()
             if not mainQueue.empty():
                 self.pollBehaviors()
                 req_type, name, command, callerid, responseQueue = mainQueue.get()
@@ -232,28 +239,60 @@ class NodeManagement:
 
     def process_topic(self, topic, command, node):
         response = None
-        rospy.loginfo('process topic {} {}'.format(topic, command))
-        published_topics = rospy.get_published_topics()
-        for published_topic in published_topics:
-            if published_topic[0] == topic:
-                rospy.loginfo('Found existing publisher for {}'.format(topic))
-                response = 'active'
-        if response:
-            return response
-            
-        try:
-            launchers = self.topics_launchers[topic]
-        except KeyError:
-            rospy.logwarn('Topic {} not implemented'.format(topic))
+        rospy.loginfo('process topic {} {} {}'.format(topic, command, node))
+
+        if command == 'stop' or command == 'shutdown':
+            # remove this node if it exists
+            if topic in self.topics:
+                (_, topic_sub_nodes) = self.topics[topic]
+                if node in topic_sub_nodes:
+                    topic_sub_nodes.remove(node)
+            return self.process_stops()
+
+        if command != 'start':
+            rospy.logerr('unimplemented topic command: {}'.format(command))
             return 'invalid'
 
-        rospy.loginfo('found topic launcher configuration for topic {}: {}'.format(topic, launchers))
-        response =  self.process_launch(launchers[0], command)
+        # Is this topic published?
+        (pubs, _) = rostopic.get_topic_list()
+        topic_pub_node = None
+        for (a_topic, _, nodes) in pubs:
+            if a_topic == topic:
+                topic_pub_node = nodes[0]
 
+        # Have we processed this topic?
+        if topic in self.topics:
+            (launcher, topic_sub_nodes) = self.topics[topic]
+        else:
+            topic_sub_nodes = set()
+            self.topics[topic] = (None, topic_sub_nodes)
+
+        if topic_pub_node and not topic_sub_nodes:
+            # This topic is already published, so add a self-reference to keep it alive
+            topic_sub_nodes.add(topic_pub_node)
+
+        if not node in topic_sub_nodes:
+            topic_sub_nodes.add(node)
+
+        if topic_pub_node:
+            response = 'active'
+        else:
+            # try to find a launcher for this topic            
+            try:
+                launchers = self.topics_launchers[topic]
+                rospy.loginfo('found topic launcher configuration for topic {}: {}'.format(topic, launchers))
+                launcher = launchers[0]
+                self.topics[topic] = (launcher, topic_sub_nodes)
+                response =  self.process_launch(launcher, command)
+            except KeyError:
+                rospy.logwarn('Topic {} not implemented'.format(topic))
+                response = 'invalid'
+
+        print('self.topics:', self.topics)
         return response
 
     def process_stops(self):
-        ''' combines all active launches and behaviors, and stops and unneeded active launches '''
+        ''' combines all active launches and behaviors, and stops any unneeded active launches '''
         needed_launches = set()
         for behavior in self.behaviors:
             print('behavior {}'.format(behavior))
@@ -262,6 +301,11 @@ class NodeManagement:
                 needed_launches.add(launch)
         for launch in self.launches:
             needed_launches.add(launch)
+
+        print(self.topics)
+        for (launch, _) in self.topics.items():
+            if launch:
+                needed_launches.add(launch)
 
         # stop any unneeded launchers
         for launch in self.launchers.copy():
