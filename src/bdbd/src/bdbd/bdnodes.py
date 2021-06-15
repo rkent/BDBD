@@ -14,6 +14,7 @@ import rospy
 import roslaunch
 import rostopic
 import rosservice
+import rosnode
 import time
 import traceback
 from bdbd_common.srv import NodeCommand
@@ -75,6 +76,20 @@ class NodeManagement:
             if rospy.get_time() - last_node_check > NODE_POLL_TIME:
                 #rospy.loginfo('Checking for stopped subscriber nodes')
                 last_node_check = rospy.get_time()
+                something_changed = False
+                active_nodes = rosnode.get_node_names()
+                for name in self.doers.copy():
+                    (_, doer_user_nodes) = self.doers[name]
+                    for user_node in doer_user_nodes.copy():
+                        if active_nodes.count(user_node) == 0:
+                            rospy.loginfo('Found inactive doer_user_node {}'.format(user_node))
+                            doer_user_nodes.remove(user_node)
+                    if len(doer_user_nodes) == 0:
+                        something_changed = True
+                        del self.doers[name]
+                if something_changed:
+                    self.process_stops()
+
             if not mainQueue.empty():
                 self.pollBehaviors()
                 req_type, name, command, callerid, responseQueue = mainQueue.get()
