@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import rospy
 from std_msgs.msg import String, Bool
-from bdbd.srv import SpeechCommand, SpeechCommandResponse
+from bdbd_common.srv import SpeechCommand, SpeechCommandResponse
 try:
     from Queue import Queue
 except:

@@ -13,6 +13,7 @@
 import rospy
 import roslaunch
 import rostopic
+import rosservice
 import time
 import traceback
 from bdbd_common.srv import NodeCommand
@@ -30,6 +31,8 @@ topics_launchers_yaml = """
         - t265
     /t265/odom/sample:
         - t265
+    /bdbd/chat:
+        - chat
 """
 NODE_POLL_TIME = 5.0 # seconds between polls to stop nodes if no longer needed
 
@@ -39,9 +42,9 @@ class NodeManagement:
         rospy.init_node("bdnodes")
         myname = rospy.get_name()
 
-        # load topic/launch relationships
-        self.topics_launchers = yaml.load(topics_launchers_yaml)
-        print('topic_nodes:', self.topics_launchers)
+        # load name/launch relationships
+        self.doers_launchers = yaml.load(topics_launchers_yaml)
+        print('doers_launchers:', self.doers_launchers)
 
         # load behaviors, and watch for changes
         self.BehaviorsModTime = None
@@ -50,8 +53,7 @@ class NodeManagement:
         self.launchers = {} # the launcher objects used to start/stop nodes
         self.behaviors = set() # the requested behaviors
         self.launches = set() # the requested launches from launch request (that is, not by behavior)
-        self.topics = {} # the requested topics
-        self.topic_launches = set() # the requested launches from topics
+        self.doers = {} # the requested topics/services/actions
         start_behaviors_str = rospy.get_param('/bdbd/behaviors', '')
         rospy.loginfo('Initial behaviors: {}'.format(start_behaviors_str))
 
@@ -65,6 +67,7 @@ class NodeManagement:
         self.launchService = rospy.Service('~launch', NodeCommand, self.handle_launch)
         self.behaviorService = rospy.Service('~behavior', NodeCommand, self.handle_behavior)
         self.topicService = rospy.Service('~topic', NodeCommand, self.handle_topic)
+        self.serviceService = rospy.Service('~service', NodeCommand, self.handle_service)
         rate = rospy.Rate(100)
         last_node_check = rospy.get_time()
         rospy.loginfo('Ready to process commands')
@@ -85,7 +88,10 @@ class NodeManagement:
                         response = self.process_behavior(name, command)
 
                     elif req_type == 'topic':
-                        response = self.process_topic(name, command, callerid)
+                        response = self.process_doer('topic', name, command, callerid)
+
+                    elif req_type == 'service':
+                        response = self.process_doer('service', name, command, callerid)
 
                     else:
                         rospy.logerr('Invalid nodeManagement req_type {}'.format(req_type))
@@ -151,6 +157,15 @@ class NodeManagement:
         rospy.loginfo('Topic command response: [{}] to [{} {}]'.format(response, req.name, req.command))
         return(response)
         
+    def handle_service(self, req):
+        # ensure that node required for a service is started
+        responseQueue = Queue()
+        rospy.loginfo('Got service request {} for {} from {}'.format(req.command, req.name, req._connection_header['callerid']))
+        mainQueue.put(['service', req.name, req.command, req._connection_header['callerid'], responseQueue])
+        response = responseQueue.get()
+        rospy.loginfo('Service command response: [{}] to [{} {}]'.format(response, req.name, req.command))
+        return(response)
+
     def process_behavior(self, behavior, command):
         try:
             if command == 'start':
@@ -237,58 +252,69 @@ class NodeManagement:
         rospy.loginfo('launcher command {} for {} result {}'.format(command, name, response))
         return response
 
-    def process_topic(self, topic, command, node):
+    def process_doer(self, type, name, command, node):
+        # This handles topics, services, and (eventually) actions
         response = None
-        rospy.loginfo('process topic {} {} {}'.format(topic, command, node))
+        rospy.loginfo('process_doer {} {} {} {}'.format(type, name, command, node))
 
         if command == 'stop' or command == 'shutdown':
             # remove this node if it exists
-            if topic in self.topics:
-                (_, topic_sub_nodes) = self.topics[topic]
-                if node in topic_sub_nodes:
-                    topic_sub_nodes.remove(node)
+            if name in self.doers:
+                (_, doer_user_nodes) = self.doers[name]
+                if node in doer_user_nodes:
+                    doer_user_nodes.remove(node)
             return self.process_stops()
 
         if command != 'start':
-            rospy.logerr('unimplemented topic command: {}'.format(command))
+            rospy.logerr('unimplemented doer command: {}'.format(command))
             return 'invalid'
 
-        # Is this topic published?
-        (pubs, _) = rostopic.get_topic_list()
-        topic_pub_node = None
-        for (a_topic, _, nodes) in pubs:
-            if a_topic == topic:
-                topic_pub_node = nodes[0]
+        if type == 'topic':
+            # Is this topic published?
+            (pubs, _) = rostopic.get_topic_list()
+            doer_active = False
+            for (a_topic, _, _) in pubs:
+                if a_topic == name:
+                    doer_active = True
 
-        # Have we processed this topic?
-        if topic in self.topics:
-            (launcher, topic_sub_nodes) = self.topics[topic]
+        elif type == 'service':
+            # is this service published?
+            services = rosservice.get_service_list()
+            doer_active = services.count(name) > 0
+
         else:
-            topic_sub_nodes = set()
-            self.topics[topic] = (None, topic_sub_nodes)
+            rospy.logerr('invalid doer type {}'.format(type))
+            return 'invalid'
 
-        if topic_pub_node and not topic_sub_nodes:
-            # This topic is already published, so add a self-reference to keep it alive
-            topic_sub_nodes.add(topic_pub_node)
+        # Have we processed this name?
+        if name in self.doers:
+            (_, doer_user_nodes) = self.doers[name]
+        else:
+            doer_user_nodes = set()
+            self.doers[name] = (None, doer_user_nodes)
 
-        if not node in topic_sub_nodes:
-            topic_sub_nodes.add(node)
+        if doer_active and not doer_user_nodes:
+            # This doer is already published, so add a self-reference to keep it alive
+            doer_user_nodes.add(rospy.get_name())
 
-        if topic_pub_node:
+        if not node in doer_user_nodes:
+            doer_user_nodes.add(node)
+
+        if doer_active:
             response = 'active'
         else:
-            # try to find a launcher for this topic            
+            # try to find a launcher for this name            
             try:
-                launchers = self.topics_launchers[topic]
-                rospy.loginfo('found topic launcher configuration for topic {}: {}'.format(topic, launchers))
-                launcher = launchers[0]
-                self.topics[topic] = (launcher, topic_sub_nodes)
-                response =  self.process_launch(launcher, command)
+                launchers = self.doers_launchers[name]
+                rospy.loginfo('found doer launcher configuration for name {}: {}'.format(name, launchers))
+                launcher = launchers[0] # Todo: allow multiple launchers
+                self.doers[name] = (launcher, doer_user_nodes)
+                response =  self.process_launch(launcher, 'start')
             except KeyError:
-                rospy.logwarn('Topic {} not implemented'.format(topic))
+                rospy.logwarn('Doer name {} not implemented'.format(name))
                 response = 'invalid'
 
-        print('self.topics:', self.topics)
+        print('self.doers:', self.doers)
         return response
 
     def process_stops(self):
@@ -302,8 +328,8 @@ class NodeManagement:
         for launch in self.launches:
             needed_launches.add(launch)
 
-        print(self.topics)
-        for (launch, _) in self.topics.items():
+        print(self.doers)
+        for (launch, _) in self.doers.items():
             if launch:
                 needed_launches.add(launch)
 

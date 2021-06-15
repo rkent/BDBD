@@ -5,7 +5,7 @@ import os
 import traceback
 from std_msgs.msg import String
 from bdbd.msg import SpeechAction
-from bdbd.srv import SpeechCommand
+from bdbd_common.srv import SpeechCommand
 from bdbd.libpy.cleverbot import Cleverbot
 from bdbd_common.srv import Dialog
 
