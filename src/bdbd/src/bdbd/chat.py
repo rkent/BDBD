@@ -8,20 +8,22 @@ from bdbd.msg import SpeechAction
 from bdbd_common.srv import SpeechCommand
 from bdbd.libpy.cleverbot import Cleverbot
 from bdbd_common.srv import Dialog
+from bdbd_common.doerRequest import DoerRequest
+import rosservice
 
 class Chatbot():
     def __init__(self):
         self.cleverbot = Cleverbot()
+        self.dr = DoerRequest()
+        try:
+            DoerRequest().ensure_doer('/bdbd/dialog', 'service', timeout=30.0)
+        except:
+            rospy.logwarn('chat failed to start dialog, maybe just a timeout')
         self.bdbdDialog = rospy.ServiceProxy('/bdbd/dialog', Dialog)
 
     def __call__(self, statement):
         try:
-            useDialog = False
-            try:
-                rospy.wait_for_service('/bdbd/dialog', .05)
-                useDialog = True
-            except:
-                pass
+            useDialog = rosservice.get_service_list().count('/bdbd/dialog') > 0
             if useDialog:
                 rospy.loginfo('asking dialog for response to <{}>'.format(statement))
                 saying = self.bdbdDialog(statement, "").response

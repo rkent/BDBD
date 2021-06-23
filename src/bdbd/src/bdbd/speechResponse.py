@@ -15,6 +15,7 @@ from std_msgs.msg import Bool
 from libpy.Battery import Battery
 from geometry_msgs.msg import PoseStamped
 from libpy.geometry import poseTheta, D_TO_R
+from bdbd_common.doerRequest import DoerRequest
 import tf
 import json
 
@@ -288,11 +289,12 @@ def main():
     with open(Behaviors_path) as behaviors_file:
         Behaviors = json.load(behaviors_file)
 
-    rospy.Subscriber('hearit/angled_text', AngledText, text_cb)
+    DoerRequest().Subscriber('hearit/angled_text', AngledText, text_cb)
     rospy.Subscriber('mike/status', Bool, on_mike_status)
     action_pub = rospy.Publisher('speechResponse/action', SpeechAction, queue_size=10)
+    # chat is optional, so don't force a doer
     chat_srv = rospy.ServiceProxy('chat', SpeechCommand)
-    sayit_srv = rospy.ServiceProxy('sayit', SpeechCommand)
+    sayit_srv = DoerRequest().ServiceProxy('sayit', SpeechCommand)
     bdnodes_srv = rospy.ServiceProxy('/bdnodes/behavior', NodeCommand)
     pixelring_pub = rospy.Publisher('pixelring', String, queue_size=10)
     battery = Battery()

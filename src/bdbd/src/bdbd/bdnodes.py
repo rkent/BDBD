@@ -28,12 +28,28 @@ import yaml
 topics_launchers_yaml = """
     /bdbd/pantilt_camera/image_raw/compressed:
         - camera
+    /bdbd/pantilt_camera/camera_info:
+        - camera
     /t265/fisheye1/image_raw/compressed:
+        - t265
+    /t265/fisheye1/camera_info:
         - t265
     /t265/odom/sample:
         - t265
     /bdbd/chat:
         - chat
+    /bdbd/dialog:
+        - dialogpt
+    /sr305/depth/color/points:
+        - sr305
+    '/sr305/color/image_raw/compressed':
+        - sr305
+    '/bdbd/objectDetect':
+        - object_detect
+    '/bdbd/sayit':
+        - sayit
+    '/bdbd/hearit/angled_text':
+        - hearit
 """
 NODE_POLL_TIME = 5.0 # seconds between polls to stop nodes if no longer needed
 
@@ -274,10 +290,12 @@ class NodeManagement:
 
         if command == 'stop' or command == 'shutdown':
             # remove this node if it exists
-            if name in self.doers:
+            if name in self.doers.copy():
                 (_, doer_user_nodes) = self.doers[name]
                 if node in doer_user_nodes:
                     doer_user_nodes.remove(node)
+                    if not doer_user_nodes:
+                        del self.doers[name]
             return self.process_stops()
 
         if command != 'start':
@@ -308,26 +326,21 @@ class NodeManagement:
             doer_user_nodes = set()
             self.doers[name] = (None, doer_user_nodes)
 
-        if doer_active and not doer_user_nodes:
-            # This doer is already published, so add a self-reference to keep it alive
-            doer_user_nodes.add(rospy.get_name())
-
         if not node in doer_user_nodes:
             doer_user_nodes.add(node)
 
-        if doer_active:
-            response = 'active'
-        else:
-            # try to find a launcher for this name            
-            try:
-                launchers = self.doers_launchers[name]
-                rospy.loginfo('found doer launcher configuration for name {}: {}'.format(name, launchers))
-                launcher = launchers[0] # Todo: allow multiple launchers
-                self.doers[name] = (launcher, doer_user_nodes)
+        try:
+            launchers = self.doers_launchers[name]
+            rospy.loginfo('found doer launcher configuration for name {}: {}'.format(name, launchers))
+            launcher = launchers[0] # Todo: allow multiple launchers
+            self.doers[name] = (launcher, doer_user_nodes)
+            if doer_active:
+                response = 'active'
+            else:
                 response =  self.process_launch(launcher, 'start')
-            except KeyError:
-                rospy.logwarn('Doer name {} not implemented'.format(name))
-                response = 'invalid'
+        except KeyError:
+            rospy.logwarn('Doer name {} not implemented'.format(name))
+            response = 'invalid'
 
         print('self.doers:', self.doers)
         return response
@@ -343,11 +356,13 @@ class NodeManagement:
         for launch in self.launches:
             needed_launches.add(launch)
 
-        print(self.doers)
-        for (launch, _) in self.doers.items():
+        print('process_stop doers:', self.doers)
+        for (launch, _) in self.doers.values():
+            print('launch in doers {}'.format(launch))
             if launch:
                 needed_launches.add(launch)
 
+        print('needed_launches: {}'.format(needed_launches))
         # stop any unneeded launchers
         for launch in self.launchers.copy():
             if launch not in needed_launches:

@@ -1,12 +1,12 @@
 {
     "explore":
-        ["drivers", "t265min", "sayit", "hearit", "speechResponse", "gamepad", "transforms", "sr305min", "detectBlocking", "explore"],
+        ["drivers", "t265min", "speechResponse", "gamepad", "transforms", "sr305min", "detectBlocking", "explore"],
     "voice":
-        ["drivers", "sayit", "hearit", "speechResponse"],
+        ["drivers", "speechResponse"],
     "objects":
         ["sayit", "detectnet", "reportObjects", "camera"],
     "chat":
-        ["drivers", "sayit", "hearit", "speechResponse", "chat"],
+        ["drivers", "speechResponse", "chat"],
     "chase":
         ["camera", "detectnet", "drivers", "sayit", "peoplechase"],
     "motion":
