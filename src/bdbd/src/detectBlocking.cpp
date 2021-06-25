@@ -35,21 +35,20 @@ class DetectBlocking
     ros::Publisher ls_pub;
     // These determine the membership in depth buckets
     const float min_depth = .30;
-    const float max_depth = .70;
+    const float max_depth = .80;
     const float min_height = .04;
     const float max_height = .16;
     const float max_distance_road = 0.03; // distance from road plane for allowable road
     const float min_distance_obstacle = 0.05; // distance from road plane to declare an obstacle
-    const int angle_divisions = 20;
+    const int angle_divisions = 22;
     const int depth_divisions = 12;
-    const int max_depth_division_plane = 6; // last depth division for plane calculation
     const float min_angle = -0.45;
     const float max_angle = 0.45;
     const float max_obstacle = 2.0;
-    const float min_obstacle_count = 3; // point count in bucket to recognize an obstacle
-    const float min_road_count = 2; // point count in bucket to recognize road
+    const float min_obstacle_count = 10; // point count in bucket to recognize an obstacle
+    const float min_road_count = 1; // point count in bucket to recognize road
     const float eps = 0.01; // added to max when no obstacles detected
-    const int max_points = 20000; // The maximum number of PointCloud points to process
+    const int max_points = 40000; // The maximum number of PointCloud points to process
     const float delta_angle = (max_angle - min_angle) / (angle_divisions - 2.0);
     const std::string target_frame = "sr305_color_frame";
     vector<float> angle_angles;
@@ -96,6 +95,7 @@ class DetectBlocking
         // Divide all points into buckets by depth, tangent
         // Assumed coordinate system: x positive right, y positive down, z positive forward.
         int indexDelta = (pcmsg.points.size() / max_points) + 1;
+        // ROS_WARN_STREAM("Point cloud points " << pcmsg.points.size() << " delta " <<indexDelta);
         for (int i = 0; i < pcmsg.points.size(); i += indexDelta)
         {
             auto point = pcmsg.points[i];
@@ -106,8 +106,9 @@ class DetectBlocking
             }
             auto y = point.y;
             auto x = point.x;
+            float depth = sqrt(x * x + z * z);
 
-            int iz = 1 + int(float(depth_divisions - 2) * (z - min_depth) / (max_depth - min_depth));
+            int iz = 1 + int(float(depth_divisions - 2) * (depth - min_depth) / (max_depth - min_depth));
             if (iz < 0) {
                 iz = 0;
             } else if (iz > depth_divisions - 1) {
@@ -232,6 +233,7 @@ class DetectBlocking
                 float max_road_depth = 0.0;
                 float min_obstacle_depth = BIG_DEPTH;
                 for (auto& point: points) {
+                    float depth = sqrt(point.x * point.x + point.z * point.z);
                     // calculate distance from plane to point
                     Eigen::Vector3f p(point.x, point.y, point.z);
                     auto distance = plane.second.dot(plane.first - p);
@@ -242,10 +244,10 @@ class DetectBlocking
                         if (point.y > min_height && point.y < max_height) { // ? why do I need this check?
                             roads_in_bucket.push_back(point);
                             roads_distance_sum += distance;
-                            roads_depth_sum += point.z;
+                            roads_depth_sum += depth;
                             roads_height_sum += point.y;
-                            max_road_depth = max(max_road_depth, point.z);
-                            min_road_depth = min(min_road_depth, point.z);
+                            max_road_depth = max(max_road_depth, depth);
+                            min_road_depth = min(min_road_depth, depth);
                         } else if (!did_point) {
                             did_point = true;
                             //ROS_WARN_STREAM("point neither obstacle nor road A (" << point.x << " " << point.y << " " << point.z);
@@ -254,9 +256,9 @@ class DetectBlocking
                         // This point is an obstacle (above the road plane)
                         obstacles_in_bucket.push_back(point);
                         obstacles_distance_sum += distance;
-                        obstacles_depth_sum += point.z;
+                        obstacles_depth_sum += depth;
                         obstacles_height_sum += point.y;
-                        min_obstacle_depth = min(min_obstacle_depth, point.z);
+                        min_obstacle_depth = min(min_obstacle_depth, depth);
                     } else if (!did_point) {
                         did_point = true;
                         //ROS_WARN_STREAM("point neither obstacle nor road B " << " distance: " << distance);
@@ -351,7 +353,9 @@ class DetectBlocking
 
         /* */
         // range is the distance to an impenetrable dropoff or obstacle
-        for (int j = 1; j < angle_divisions - 1; j++) {
+        for (int jj = 1; jj < angle_divisions - 1; jj++) {
+            // flip angle coordinates
+            int j = angle_divisions - jj - 1;
             float range = min_depth;
             if (angle_road_start[j] < min_depth) {
                 // There is at least some valid road in front of us
