@@ -208,6 +208,7 @@ catkin_install_python(PROGRAMS
   nodes/changepose
   nodes/domotors
   nodes/drivers
+  nodes/ensureDoer
   nodes/explore
   nodes/gamepad
   nodes/hearit

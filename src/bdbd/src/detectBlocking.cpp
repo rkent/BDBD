@@ -35,13 +35,13 @@ class DetectBlocking
     ros::Publisher ls_pub;
     // These determine the membership in depth buckets
     const float min_depth = .30;
-    const float max_depth = .80;
+    const float max_depth = .70;
     const float min_height = .04;
     const float max_height = .16;
     const float max_distance_road = 0.03; // distance from road plane for allowable road
     const float min_distance_obstacle = 0.05; // distance from road plane to declare an obstacle
-    const int angle_divisions = 22;
-    const int depth_divisions = 12;
+    const int angle_divisions = 23;
+    const int depth_divisions = 10;
     const float min_angle = -0.45;
     const float max_angle = 0.45;
     const float max_obstacle = 2.0;
@@ -49,7 +49,7 @@ class DetectBlocking
     const float min_road_count = 1; // point count in bucket to recognize road
     const float eps = 0.01; // added to max when no obstacles detected
     const int max_points = 40000; // The maximum number of PointCloud points to process
-    const float delta_angle = (max_angle - min_angle) / (angle_divisions - 2.0);
+    const float delta_angle = (max_angle - min_angle) / (angle_divisions - 3.0);
     const std::string target_frame = "sr305_color_frame";
     vector<float> angle_angles;
 
@@ -187,7 +187,7 @@ class DetectBlocking
         }
 
         // check reasonableness of plane
-        if (plane.second[1] < .98) {
+        if (plane.second[1] < .95) {
             ROS_WARN_STREAM("Direction of road plane is not reasonable" << plane.second[1]);
             validPlane = false;
         }

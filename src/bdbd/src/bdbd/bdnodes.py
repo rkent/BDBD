@@ -61,7 +61,7 @@ class NodeManagement:
 
         # load name/launch relationships
         self.doers_launchers = yaml.load(topics_launchers_yaml)
-        print('doers_launchers:', self.doers_launchers)
+        #print('doers_launchers:', self.doers_launchers)
 
         # load behaviors, and watch for changes
         self.BehaviorsModTime = None
