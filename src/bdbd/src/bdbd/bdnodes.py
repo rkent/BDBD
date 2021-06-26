@@ -30,6 +30,8 @@ topics_launchers_yaml = """
         - camera
     /bdbd/pantilt_camera/camera_info:
         - camera
+    /bdbd/detectBlocking/scan:
+        - detectBlocking
     /t265/fisheye1/image_raw/compressed:
         - t265
     /t265/fisheye1/camera_info:
@@ -356,7 +358,6 @@ class NodeManagement:
         for launch in self.launches:
             needed_launches.add(launch)
 
-        print('process_stop doers:', self.doers)
         for (launch, _) in self.doers.values():
             print('launch in doers {}'.format(launch))
             if launch:

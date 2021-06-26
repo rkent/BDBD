@@ -1,3 +1,9 @@
 <launch>
+    <arg name='services' default='""' />
+    <arg name='topics' default='"/sr305/depth/color/points"' />
+    <node name='$(anon ensureDoer)' pkg='bdbd' type='ensureDoer' output='screen'
+          args='$(arg topics) $(arg services)'>
+    </node>
+
     <node name='detectBlocking' pkg='bdbd' type='detectBlocking' ns='bdbd' output='screen' />
 </launch>

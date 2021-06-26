@@ -2,7 +2,7 @@
 <launch>
     <arg name='services' default='""' />
     <arg name='topics' default='"/t265/odom/sample /sr305/depth/color/points"' />
-    <node name='ensureDoer' pkg='bdbd' type='ensureDoer' output='screen'
+    <node name='$(anon ensureDoer)' pkg='bdbd' type='ensureDoer' output='screen'
           args='$(arg topics) $(arg services)'>
     </node>
 </launch>
