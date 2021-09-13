@@ -7,6 +7,7 @@ try:
     from Queue import Queue
 except:
     from queue import Queue
+import os
 
 PERIOD = 0.1 # How frequently to call, in seconds
 
@@ -19,6 +20,7 @@ class Do_Motors():
         self.active = False
         self.event_queue = Queue()
         rospy.init_node('domotors')
+        rospy.loginfo('{} starting with PID {}'.format(os.path.basename(__file__), os.getpid()))
         self.sub = rospy.Subscriber('gamepad/events', GamepadEvent, self.on_gamepad_event)
         self.pub = rospy.Publisher('motors/cmd_raw', MotorsRaw, queue_size=10)
 
@@ -64,7 +66,6 @@ class Do_Motors():
             x = (self.Z - 127) / 128. # ABS_Z zeroes at 127
             y = (128 - self.RZ) / 128. #ABS_RZ zeroes at 128
             norm = math.sqrt(x*x + y*y)
-            rospy.loginfo('(x, y) is ({:6.3f}, {:6.3f})'.format(x, y))
             theta = math.atan2(y, x)
             gamma = theta - math.pi / 4.
             # rospy.loginfo('theta: {:6.3f} gamma: {:6.3f} norm: {:6.3f}'.format(theta, gamma, norm))

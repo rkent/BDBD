@@ -10,6 +10,7 @@
         status: tell node status
 '''
 
+import xml.etree.ElementTree as ET
 import rospy
 import roslaunch
 import rostopic
@@ -26,32 +27,36 @@ import os
 import yaml
 
 topics_launchers_yaml = """
-    /bdbd/pantilt_camera/image_raw/compressed:
-        - camera
-    /bdbd/pantilt_camera/camera_info:
-        - camera
+    /bdbd/chat:
+        - chat
     /bdbd/detectBlocking/scan:
         - detectBlocking
+    /bdbd/detectBlocking/roadBlocking:
+        - detectBlocking
+    /bdbd/dialog:
+        - dialogpt
+    /bdbd/hearit/angled_text:
+        - hearit
+    /bdbd/objectDetect:
+        - object_detect
+    /bdbd/pantilt_camera/camera_info:
+        - camera
+    /bdbd/pantilt_camera/image_raw/compressed:
+        - camera
+    /bdbd/sayit:
+        - sayit
+    /bdbd/speechResponse/action:
+        - speechResponse
+    /sr305/depth/color/points:
+        - sr305
+    /sr305/color/image_raw/compressed:
+        - sr305
     /t265/fisheye1/image_raw/compressed:
         - t265
     /t265/fisheye1/camera_info:
         - t265
     /t265/odom/sample:
         - t265
-    /bdbd/chat:
-        - chat
-    /bdbd/dialog:
-        - dialogpt
-    /sr305/depth/color/points:
-        - sr305
-    '/sr305/color/image_raw/compressed':
-        - sr305
-    '/bdbd/objectDetect':
-        - object_detect
-    '/bdbd/sayit':
-        - sayit
-    '/bdbd/hearit/angled_text':
-        - hearit
 """
 NODE_POLL_TIME = 5.0 # seconds between polls to stop nodes if no longer needed
 
@@ -254,7 +259,19 @@ class NodeManagement:
                 response = 'active'
             else:
                 try:
-                    if name.find(':docker') > 0:
+                    # What node should we look for? Look for keynode in launch file, else
+                    # just default to the launch file name
+                    launch_file_name = '/home/kent/github/rkent/bdbd/src/bdbd/launch/' + name + '.launch'
+                    launch_file_root = ET.parse(launch_file_name).getroot()
+                    if 'keynode' in launch_file_root.attrib:
+                        node_name = launch_file_root.attrib['keynode']
+                    else:
+                        node_name = '/bdbd/' + name
+                    rospy.loginfo('node_name for launcher {} is {}'.format(name, node_name))
+                    if node_name in rosnode.get_node_names():
+                        rospy.loginfo('Node {} already started'.format(node_name))
+                        response = 'active'
+                    elif name.find(':docker') > 0:
                         # start using docker service
                         response = self.process_docker(name, command)
                         if response != 'error':

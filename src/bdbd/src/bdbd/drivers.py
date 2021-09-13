@@ -49,6 +49,9 @@ motor_right_ID = 2
 def main():
 
     panTiltQueue = Queue()
+    motor_left = None
+    motor_right = None
+
     #
     ### Motor functions
     #
@@ -86,11 +89,8 @@ def main():
 
     # stops all motors
     def all_stop():
-        motor_left.setSpeed(0)
-        motor_right.setSpeed(0)
-
-        motor_left.run(Adafruit_MotorHAT.RELEASE)
-        motor_right.run(Adafruit_MotorHAT.RELEASE)
+        set_speed(motor_left_ID,  0)
+        set_speed(motor_right_ID,  0)
 
     # directional commands (degree, speed)
     def on_cmd_dir(msg):
@@ -311,12 +311,15 @@ def main():
         pass
     finally:
         # stop motors before exiting
-        all_stop()
-        # center pan/tilt
-        panTiltQueue.put([CenterPanTilt, None])
-        panTiltQueue.put([False, None])
-        # pixelring listen
-        pixelring.listen()
+        try:
+            all_stop()
+            # center pan/tilt
+            panTiltQueue.put([CenterPanTilt, None])
+            panTiltQueue.put([False, None])
+            # pixelring listen
+            pixelring.listen()
+        except:
+            pass
         rospy.sleep(1)
 
 if __name__ == '__main__':

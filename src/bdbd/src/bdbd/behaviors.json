@@ -1,6 +1,6 @@
 {
     "explore":
-        ["drivers", "t265min", "speechResponse", "gamepad", "transforms", "sr305min", "detectBlocking", "explore"],
+        ["drivers", "t265", "speechResponse", "gamepad", "sr305", "detectBlocking", "explore"],
     "voice":
         ["drivers", "speechResponse"],
     "objects":
@@ -10,5 +10,7 @@
     "chase":
         ["camera", "detectnet", "drivers", "sayit", "peoplechase"],
     "motion":
-        ["drivers", "t265min", "ssmotion", "transforms", "lrcapture"]
+        ["drivers", "t265", "ssmotion", "lrcapture"],
+    "gamepad":
+        ["drivers", "domotors", "gamepad"]
 } 

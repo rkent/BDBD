@@ -1,4 +1,4 @@
-<launch>
+<launch keynode="/sr305/realsense2_camera">
   <rosparam command="load" file="$(find bdbd)/launch/configs/sr305.yaml"/>
   <arg name="serial_no"             default=""/>
   <arg name="camera"                default="sr305"/>

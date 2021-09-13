@@ -48,10 +48,10 @@ sr305:
     stream_format_filter: 1
     stream_index_filter: -1
   coded_light_depth_sensor:
-    accuracy: 2
-    confidence_threshold: 5
-    filter_option: 5
-    frames_queue_size: 1
-    laser_power: 1
-    motion_range: 100
-    visual_preset: 9
+    #accuracy: 2
+    #confidence_threshold: 5
+    #filter_option: 5
+    #frames_queue_size: 1
+    #laser_power: 1
+    #motion_range: 100
+    visual_preset: 8

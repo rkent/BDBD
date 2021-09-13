@@ -10,11 +10,16 @@ from enum import Enum
 from copy import deepcopy
 import rospy
 import tf
+import tf2_ros
+# even though I don't explictly use tf2_geometry_msgs, loading it seems to have the critical
+# side effect of enabling a tf2 buffer to do transforms on geometry messages.
+import tf2_geometry_msgs
 from bdbd.msg import RoadBlocking
 from bdbd.msg import MotorsRaw
 from bdbd.msg import GamepadEvent
 from bdbd.msg import AngledText
 from bdbd.msg import SpeechAction
+from bdbd_common.doerRequest import DoerRequest
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped, Quaternion
 from nav_msgs.msg import Odometry
@@ -25,12 +30,14 @@ try:
 except:
     from queue import Queue, Empty
 
+doerRequest = DoerRequest()
+
 # constants
 RATE = 10 # frequency of main loop and motion update
 MIN_TIME = 1.0 # how long to wait for a blocking message until we panic and stop
 OBSTACLE_CLOSE_CENTER = 0.30 # how close is too close for obstacle, in meters
-OBSTACLE_CLOSE_SIDES = 0.30
-DROPOFF_CLOSE = 0.30 # how much viable road before we declare a dropoff
+OBSTACLE_CLOSE_SIDES = 0.40
+DROPOFF_CLOSE = 0.40 # how much viable road before we declare a dropoff
 HYST = 0.25 # fractional change required to change state
 SPEED = 0.8
 SPEED_MIN = 0.25
@@ -119,7 +126,7 @@ def getLR_distance(tfl, target_pose):
     # get motor left, right for distance of rear_wheels to target with proportional control
     vmax = SPEED
     # determine the coordinates of the target relative to the robot
-    target_pose = tfl.transformPose('rear_wheels', target_pose)
+    target_pose = tfl.transform(target_pose, 'rear_wheels')
     target_p = target_pose.pose.position
     theta = math.atan2((target_p.y), (target_p.x))
     distance = math.sqrt(target_p.y**2 + target_p.x**2)
@@ -153,7 +160,7 @@ def getLR_distance(tfl, target_pose):
 def getLR_theta(tfl, target_pose):
     # get motor left, right to rotate to correct target_pose theta
     vmax = SPEED
-    current_pose = tfl.transformPose('map', zeroPose('base_link'))
+    current_pose = tfl.transform(zeroPose('base_link'), 'map')
     theta = poseTheta(current_pose, target_pose)
     if abs(theta) > THETA_TOLERANCE:
         right_speed = min(vmax, max(-vmax, ROTATE_GAIN * theta))
@@ -219,11 +226,11 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
             rospy.logdebug('objectives.direction: {} blocking: {}'.format(direction, blocking))
         target_pose = objectives and objectives[0].poseTarget or None
         # rospy.loginfo('current_pose {}'.format(current_pose))
-        current_pose = tfl.transformPose('map', current_pose)
-        last_pose = tfl.transformPose('map', last_pose)
+        current_pose = tfl.transform(current_pose, 'map')
+        last_pose = tfl.transform(last_pose, 'map')
         if target_pose is not None:
             # rospy.logdebug('target_pose: {}'.format(target_pose))
-            target_pose = tfl.transformPose('map', target_pose)
+            target_pose = tfl.transform(target_pose, 'map')
 
         if direction == Direction.STOPPED:
             new_state = Moving.STOPPED
@@ -238,7 +245,7 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
             # Calculate the rear wheel position at target, and move to it
             rear_target = deepcopy(target_pose)
             rospy.loginfo('TARGET pose: {}'.format(rear_target))
-            base_position = tfl.transformPose('rear_wheels', zeroPose('base_link')).pose.position
+            base_position = tfl.transform(zeroPose('base_link'), 'rear_wheels').pose.position
             delta = base_position.x # assumes y offset from base to rear is zero
             theta = poseTheta(target_pose, zeroPose('map'))
             rear_target.pose.position.x -= delta * math.cos(theta)
@@ -268,9 +275,9 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
             else:
                 # reverse then rotate
                 objectives.insert(0, Objective(Direction.ROTATE, None))
-                new_pose = tfl.transformPose('base_link', current_pose)
+                new_pose = tfl.transform(current_pose, 'base_link')
                 new_pose.pose.position.x -= REVERSE_DISTANCE
-                new_pose = tfl.transformPose('map', new_pose)
+                new_pose = tfl.transform(new_pose, 'map')
                 objectives.insert(0, Objective(Direction.REVERSE, new_pose))
                 new_state = Moving.REVERSE
 
@@ -326,9 +333,9 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
                 o_new.y = q_new[1]
                 o_new.z = q_new[2]
                 o_new.w = q_new[3]
-                pose_new = tfl.transformPose('base_link', current_pose)
+                pose_new = tfl.transform(current_pose, 'base_link')
                 pose_new.pose.orientation = o_new
-                pose_new = tfl.transformPose('map', pose_new)
+                pose_new = tfl.transform(pose_new, 'map')
             else:
                 # choose rotation based on target pose
                 pose_new = target_pose
@@ -350,7 +357,7 @@ def getNewMovement(objectives, blocking, current_pose, last_pose, tfl):
         else:
             raise RuntimeError('unknown direction {}'.format(direction))
     if new_state != Moving.STOPPED:
-        rospy.logdebug('new_state: {}'.format(new_state))
+        rospy.loginfo('new_state: {}'.format(new_state))
     return new_state, target_pose
 
 def do_movement(moving_state, tfl, target_pose):
@@ -387,16 +394,24 @@ def do_movement(moving_state, tfl, target_pose):
 def main():
     rospy.init_node('explore')
     lastChange = time.time()
-    tfl = tf.TransformListener()
-    # let the listener listen some
-    rospy.sleep(2.0)
-    blocking_sub = rospy.Subscriber('/bdbd/detectBlocking/roadBlocking', RoadBlocking, msg_cb)
+    blocking_sub = doerRequest.Subscriber('/bdbd/detectBlocking/roadBlocking', RoadBlocking, msg_cb)
     gamepad_sub = rospy.Subscriber('/bdbd/gamepad/events', GamepadEvent, msg_cb)
-    action_sub = rospy.Subscriber('speechResponse/action', SpeechAction, msg_cb)
+    action_sub = doerRequest.Subscriber('/bdbd/speechResponse/action', SpeechAction, msg_cb)
     objective_sub = rospy.Subscriber('/bdbd/explore/poseTarget', PoseStamped, msg_cb)
-    odometry_sub = rospy.Subscriber('/t265/odom/sample', Odometry, msg_cb)
+    odometry_sub = doerRequest.Subscriber('/t265/odom/sample', Odometry, msg_cb)
     motor_pub = rospy.Publisher('/bdbd/motors/cmd_raw', MotorsRaw, queue_size=10)
     sayit_pub = rospy.Publisher('/bdbd/sayit/text', String, queue_size=10)
+    rospy.loginfo('Waiting for transforms to be active')
+    tf2_buffer = tf2_ros.Buffer(rospy.Duration(10.0))
+    tf2_listener = tf2_ros.TransformListener(tf2_buffer)
+    tfl = tf2_buffer
+    if not tf2_buffer.can_transform('base_link', 'map', rospy.Time(), rospy.Duration(30.0)):
+        raise Exception("Can't complete map to base_link transforms")
+    # dummy
+    #trans = tf2_buffer.lookup_transform('base_link', 'map', rospy.Time())
+    #print('trans', trans)
+    current_pose = tfl.transform(zeroPose('base_link'), 'map')
+    #print('current_pose', current_pose)
     objectives = []
     blocking = set()
     actual_state = Moving.STOPPED
@@ -445,7 +460,7 @@ def main():
                         objectives = [Objective(Direction.TARGET, pose)]
 
                 elif msg_type == 'bdbd/RoadBlocking':
-                    if not tfl.canTransform('base_link', 'map', rospy.Time()):
+                    if not tfl.can_transform('base_link', 'map', rospy.Time()):
                         rospy.logwarn('No transform from map to base_link')
                         blocking_active = False
                     else:
@@ -483,7 +498,7 @@ def main():
                     rospy.logwarn("Unexpected message type {}".format(msg_type))
 
             last_pose = current_pose
-            current_pose = tfl.transformPose('map', zeroPose('base_link'))
+            current_pose = tfl.transform(zeroPose('base_link'), 'map')
 
             if last_pose is None:
                 rospy.logdebug('No last_pose')
@@ -520,6 +535,7 @@ def main():
                 blocking_active = False
             if not blocking_active:
                 new_state = Moving.STOPPED
+                rospy.loginfo('Stopping because blocking is inactive')
 
             newleft, newright = do_movement(new_state, tfl, target_pose)
             if new_state not in [Moving.TARGET_DISTANCE, Moving.TARGET_THETA]:

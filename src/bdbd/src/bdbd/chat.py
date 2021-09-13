@@ -11,12 +11,13 @@ from bdbd_common.srv import Dialog
 from bdbd_common.doerRequest import DoerRequest
 import rosservice
 
+doerRequest = DoerRequest()
+
 class Chatbot():
     def __init__(self):
         self.cleverbot = Cleverbot()
-        self.dr = DoerRequest()
         try:
-            DoerRequest().ensure_doer('/bdbd/dialog', 'service', timeout=30.0)
+            doerRequest.ensure_doer('/bdbd/dialog', 'service', timeout=30.0)
         except:
             rospy.logwarn('chat failed to start dialog, maybe just a timeout')
         self.bdbdDialog = rospy.ServiceProxy('/bdbd/dialog', Dialog)
@@ -63,7 +64,7 @@ def main():
     rospy.init_node('chat')
     chatbot = Chatbot()
     rospy.loginfo('{} starting with PID {}'.format(os.path.basename(__file__), os.getpid()))
-    rospy.Subscriber('speechResponse/action', SpeechAction, action_cb)
+    doerRequest.Subscriber('/bdbd/speechResponse/action', SpeechAction, action_cb)
     rospy.Service('chat', SpeechCommand, action_cb)
     sayit_pub = rospy.Publisher('sayit/text', String, queue_size=10)
 

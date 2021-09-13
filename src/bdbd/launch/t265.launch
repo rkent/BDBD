@@ -4,7 +4,8 @@ and accurate tracking. The relevant APIs will be added to librealsense and
 ROS/realsense in upcoming releases. Currently, the API is available in the
 https://github.com/IntelRealSense/librealsense/blob/master/third-party/libtm/libtm/include/TrackingDevice.h#L508-L515.
 -->
-<launch>
+<launch keynode="/t265/realsense2_camera">
+  <param name="/t265/tracking_module/enable_pose_jumping" type="bool" value="false"/>
   <arg name="serial_no"           default=""/>
   <arg name="usb_port_id"         default=""/>
   <arg name="device_type"         default="t265"/>

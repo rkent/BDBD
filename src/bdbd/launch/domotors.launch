@@ -1,0 +1,3 @@
+<launch>
+    <node name='domotors' pkg='bdbd' type='domotors' ns='bdbd'  output='screen'/>
+</launch>
